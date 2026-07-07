@@ -49,6 +49,9 @@ def cmd_prepare(args):
         "disclosure": brief.get("disclosure", "#ad" if brief.get("is_branded") else ""),
         "video_url": brief.get("video_url", ""),   # public URL; official + composio pull from this
         "platforms": brief.get("platforms", ["tiktok", "reels", "shorts"]),
+        "banned_phrases": brief.get("banned_phrases", []),   # e.g. health/efficacy claims
+        "min_seconds": brief.get("min_seconds", 0),
+        "max_seconds": brief.get("max_seconds", 0),
         "prepared_at": datetime.now().isoformat(timespec="seconds"),
     }
     Path(args.out).write_text(json.dumps(package, indent=2))
@@ -62,20 +65,31 @@ def cmd_prepare(args):
 
 def compliance_check(pkg):
     """Return list of problems; empty list means OK to send."""
+    import re
     problems = []
     if pkg.get("privacy") != "public":
         problems.append("privacy is not public — would earn 0 Vyro views")
     final = build_caption(pkg).lower()
-    if pkg.get("ai_generated") and "ai" not in final:
+    # word-boundary match: a bare substring check passes on "paid"/"said"
+    if pkg.get("ai_generated") and not re.search(r"\bai\b|\baigc\b|#ai\w*", final):
         # not authoritative — TikTok also has a native AIGC toggle; set that too.
         problems.append("AI content but no AI disclosure in caption/label — add the AI-content label")
     missing = [h for h in pkg.get("required_hashtags", [])
-               if h.lower().lstrip("#") not in final]
+               if not re.search(r"#?" + re.escape(h.lower().lstrip("#")) + r"\b", final)]
     if missing:
         problems.append(f"missing required hashtags from brief: {missing}")
+    hit = [p for p in pkg.get("banned_phrases", []) if p.lower() in final]
+    if hit:
+        problems.append(f"caption contains phrases the brief bans: {hit}")
     dur = ffprobe_duration(pkg.get("video", ""))
-    if dur is not None and dur < 3:
-        problems.append(f"clip is {dur:.1f}s — TikTok rejects under 3s")
+    if dur is not None:
+        lo = max(3.0, float(pkg.get("min_seconds") or 0))
+        hi = float(pkg.get("max_seconds") or 0)
+        if dur < lo:
+            problems.append(f"clip is {dur:.1f}s — under the {lo:.0f}s minimum "
+                            "(TikTok floor is 3s; the brief may require more)")
+        if hi and dur > hi:
+            problems.append(f"clip is {dur:.1f}s — over the brief's {hi:.0f}s maximum")
     return problems
 
 

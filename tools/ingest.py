@@ -83,7 +83,10 @@ def main():
         d.mkdir(parents=True, exist_ok=True)
         dest = d / p.name
         if not dest.exists():
-            shutil.copy2(p, dest)
+            try:                       # hardlink: no double disk for multi-GB footage
+                dest.hardlink_to(p)
+            except OSError:
+                shutil.copy2(p, dest)
 
         notes = [f"# {p.name}", "",
                  f"- id: `{vid}`",
