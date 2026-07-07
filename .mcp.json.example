@@ -1,0 +1,12 @@
+{
+  "_comment": "Copy to .mcp.json to give Claude Code (and MCP-aware Codex) the Composio tool layer. Reads COMPOSIO_API_KEY from your environment / .env. The Tool Router endpoint and auth header can change — confirm the current one at docs.composio.dev. Easiest path is the CLI: claude mcp add --scope user --transport http composio https://connect.composio.dev/mcp",
+  "mcpServers": {
+    "composio": {
+      "type": "http",
+      "url": "https://connect.composio.dev/mcp",
+      "headers": {
+        "Authorization": "Bearer ${COMPOSIO_API_KEY}"
+      }
+    }
+  }
+}

@@ -1,0 +1,22 @@
+# secrets & local config
+.env
+.mcp.json
+
+# python venv
+.venv/
+__pycache__/
+*.pyc
+
+# working artifacts (your footage / cuts / candidate lists)
+work/
+out/
+**/candidates/
+post_package.json
+candidates.json
+candidates.md
+
+# inbox drop folder — ignore the videos, keep the folder
+inbox/*
+!inbox/.gitkeep
+!inbox/README.txt
+knowledge/inbox-manifest.json

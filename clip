@@ -1,0 +1,351 @@
+#!/usr/bin/env bash
+# clip — control center for the Clip Factory (Vyro clipping pipeline)
+#   ./clip            interactive menu
+#   ./clip <command>  run a command directly (see ./clip help)
+
+set -uo pipefail
+DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$DIR"
+
+# ---- colour (only on a real terminal) ----
+if [ -t 1 ]; then
+  G=$'\e[32m'; R=$'\e[31m'; Y=$'\e[33m'; C=$'\e[36m'; B=$'\e[1m'; D=$'\e[2m'; X=$'\e[0m'
+else G=; R=; Y=; C=; B=; D=; X=; fi
+
+ok(){  printf "  [${G}ok${X}] %s\n" "$1"; }
+bad(){ printf "  [${R}!!${X}] %s\n" "$1"; [ -n "${2:-}" ] && printf "         ${D}→ %s${X}\n" "$2"; FAILS=$((FAILS+1)); }
+opt(){ printf "  [${Y}--${X}] %s\n" "$1"; [ -n "${2:-}" ] && printf "         ${D}→ %s${X}\n" "$2"; }
+hdr(){ printf "\n${B}%s${X}\n" "$1"; }
+have(){ command -v "$1" >/dev/null 2>&1; }
+
+PY="python3"; [ -x ".venv/bin/python" ] && PY=".venv/bin/python"
+
+env_val(){ [ -f .env ] || return 0; grep -E "^$1=" .env 2>/dev/null | tail -1 | cut -d= -f2- | tr -d '"'"'"; }
+is_set(){ local v="${1:-}"; [ -n "$v" ] && [[ "$v" != your_* ]] && [[ "$v" != *PLACEHOLDER* ]]; }
+
+cur_mode(){ local m; m="$(env_val MODE)"; echo "${m:-offline}"; }
+is_online(){ case "$(cur_mode)" in online|publish) return 0 ;; *) return 1 ;; esac; }
+mode_label(){ is_online && printf "online" || printf "offline"; }
+
+set_env(){  # set_env KEY VALUE — update or append a line in .env
+  local k="$1" v="$2"
+  [ -f .env ] || { [ -f .env.example ] && cp .env.example .env || touch .env; }
+  if grep -qE "^$k=" .env; then sed -i.bak -E "s|^$k=.*|$k=$v|" .env && rm -f .env.bak
+  else printf '%s=%s\n' "$k" "$v" >> .env; fi
+}
+
+auto_backend(){  # the free-first default for online mode
+  is_set "$(env_val UPLOADPOST_API_KEY)" && { echo uploadpost; return; }
+  is_set "$(env_val COMPOSIO_API_KEY)"   && { echo composio;   return; }
+  is_set "$(env_val SCHEDULER_API_KEY)"  && { echo scheduler;  return; }
+  echo queue
+}
+
+backend_summary(){
+  local s="${D}—${X}" t="${D}—${X}" c="${D}—${X}" u="${D}—${X}"
+  is_set "$(env_val UPLOADPOST_API_KEY)"  && u="${G}uploadpost${X}"
+  is_set "$(env_val SCHEDULER_API_KEY)"   && s="${G}scheduler${X}"
+  is_set "$(env_val TIKTOK_ACCESS_TOKEN)" && t="${G}tiktok-api${X}"
+  is_set "$(env_val COMPOSIO_API_KEY)"    && c="${G}composio${X}"
+  printf "%s · %s · %s · %s" "$u" "$s" "$t" "$c"
+}
+
+banner(){
+  printf "%s" "$C"
+  cat <<'ART'
+    ___ _    ___ ___   ___ _   ___ _____ ___  _____   __
+   / __| |  |_ _| _ \ | __/_\ / __|_   _/ _ \| _ \ \ / /
+  | (__| |__ | ||  _/ | _/ _ \ (__  | || (_) |   /\ V /
+   \___|____|___|_|   |_/_/ \_\___| |_| \___/|_|_\ |_|
+ART
+  printf "%s" "$X"
+  printf "  ${D}approved footage  →  clips that earn  ·  v1.1${X}\n"
+}
+
+# ---------------- doctor ----------------
+c_doctor(){
+  FAILS=0
+  hdr "Environment check"
+  hdr "Core (required)"
+  if have python3; then ok "Python $(python3 -V 2>&1 | awk '{print $2}')"; else bad "python3 not found" "sudo dnf install -y python3 python3-pip"; fi
+  if have ffmpeg;  then ok "ffmpeg $(ffmpeg -version 2>/dev/null | head -1 | awk '{print $3}')"; else bad "ffmpeg not found" "enable RPM Fusion, then: sudo dnf install -y ffmpeg"; fi
+  if have ffprobe; then ok "ffprobe present"; else bad "ffprobe not found" "comes with the ffmpeg package"; fi
+  [ -f skills/clip-select/find_moments.py ] && ok "clip-select skill" || bad "skills/clip-select/find_moments.py missing"
+  [ -f skills/publish/publish.py ]          && ok "publish skill"     || bad "skills/publish/publish.py missing"
+  [ -f tools/ingest.py ] && ok "ingest tool"  || bad "tools/ingest.py missing"
+  [ -f tools/make_cover.py ] && ok "cover tool" || bad "tools/make_cover.py missing"
+  { [ -f AGENT-PLAYBOOK.md ] && [ -f STATE.md ]; } && ok "agent playbook + STATE" || bad "AGENT-PLAYBOOK.md / STATE.md missing"
+  if [ -f AGENTS.md ] && [ -f CLAUDE.md ]; then ok "dual-agent config (AGENTS.md + CLAUDE.md)"; else bad "AGENTS.md / CLAUDE.md missing" "./clip setup"; fi
+
+  hdr "Optional"
+  [ -d .venv ] && ok "python venv (.venv)" || opt "no .venv yet" "./clip setup"
+  if have yt-dlp; then ok "yt-dlp (download approved source)"; else opt "yt-dlp not installed" "pipx install yt-dlp  (or: sudo dnf install -y yt-dlp)"; fi
+  if "$PY" -c 'import faster_whisper' 2>/dev/null; then ok "faster-whisper (transcripts)"; else opt "faster-whisper not installed" "pip install faster-whisper — smarter clip picks + ingest notes"; fi
+  if "$PY" -c 'import PIL' 2>/dev/null; then ok "Pillow (cover generator)"; else opt "Pillow not installed" "pip install pillow — needed for ./clip cover"; fi
+  if "$PY" -c 'import composio' 2>/dev/null; then ok "composio SDK"; else opt "composio SDK not installed" "pip install composio — only for --via composio"; fi
+  [ -f knowledge/ledger.md ] && ok "knowledge base / ledger" || opt "no ledger yet" "./clip setup"
+  [ -d inbox ] && ok "inbox/ drop folder" || opt "no inbox/ yet" "./clip setup"
+
+  hdr "Publishing"
+  printf "  mode: ${B}%s${X}  %s\n" "$(mode_label)" "$(is_online && echo '(clips + posts)' || echo '(clips only — switch with ./clip online)')"
+  if [ -f .env ]; then ok ".env present"; else opt "no .env yet" "cp .env.example .env (publish runs dry-run without it)"; fi
+  is_set "$(env_val UPLOADPOST_API_KEY)"  && ok "Upload-Post key set (free auto-post)" || opt "Upload-Post not configured" "free tier at upload-post.com → UPLOADPOST_API_KEY (no audit, easiest)"
+  is_set "$(env_val SCHEDULER_API_KEY)"   && ok "scheduler key set"     || opt "scheduler not configured" "add SCHEDULER_API_KEY to .env"
+  is_set "$(env_val TIKTOK_ACCESS_TOKEN)" && ok "TikTok API token set"  || opt "TikTok official API not configured" "needs an audited app; add TIKTOK_ACCESS_TOKEN"
+  is_set "$(env_val COMPOSIO_API_KEY)"    && ok "Composio key set"      || opt "Composio not configured" "add COMPOSIO_API_KEY + connect TikTok in the dashboard"
+
+  hdr "Result"
+  if [ "$FAILS" -eq 0 ]; then printf "  ${G}All required checks passed.${X}  Drop videos in ${B}inbox/${X}, then: ${B}./clip ingest${X}\n\n"
+  else printf "  ${R}%s required item(s) need attention${X} — fix the [!!] lines above.\n\n" "$FAILS"; fi
+}
+
+# ---------------- setup ----------------
+c_setup(){
+  hdr "Setup (safe, local only — downloads no remote code)"
+  mkdir -p skills knowledge work out briefs inbox tools
+  [ -f setup-agents.sh ] && bash setup-agents.sh
+  [ -f inbox/README.txt ] || printf 'Drop your campaign videos here, then run ./clip ingest.\nOnly drop footage the campaign has approved.\n' > inbox/README.txt
+  [ -f STATE.md ] || printf '# STATE\n\n## Mode\noffline\n\n## Next actions\n- Drop videos in inbox/ and run ./clip ingest.\n' > STATE.md
+  if [ ! -d .venv ]; then echo "Creating python venv (.venv)…"; python3 -m venv .venv && echo "  done."; fi
+  if [ ! -f .env ] && [ -f .env.example ]; then cp .env.example .env; echo "Created .env from template — add credentials when ready."; fi
+  echo
+  echo "Optional installs:"
+  echo "  .venv/bin/pip install faster-whisper   # transcripts (smarter picks + ingest notes)"
+  echo "  .venv/bin/pip install pillow           # needed for ./clip cover"
+  echo "  .venv/bin/pip install composio requests# only if you use those publish backends"
+  c_doctor
+}
+
+# ---------------- new campaign ----------------
+c_new_campaign(){
+  local name="${1:-}"
+  [ -z "$name" ] && read -rp "Campaign name (e.g. beast-games): " name
+  [ -z "$name" ] && { echo "no name given."; return 1; }
+  name="$(echo "$name" | tr ' ' '-' | tr -cd 'A-Za-z0-9._-')"
+  mkdir -p "work/$name" "out/$name" briefs
+  local brief="briefs/$name.json"
+  if [ -f "$brief" ]; then echo "brief already exists: $brief"; else
+    cat > "$brief" <<EOF
+{
+  "campaign": "$name",
+  "caption_template": "WRITE A SCROLL-STOPPING FIRST LINE HERE",
+  "required_hashtags": ["#fyp"],
+  "ai_generated": true,
+  "is_branded": false,
+  "disclosure": "",
+  "video_url": "",
+  "platforms": ["tiktok", "reels", "shorts"],
+  "notes": "Paste the campaign's rules: allowed source, length limits, required tags/disclosures."
+}
+EOF
+    echo "Created $brief — fill in the campaign's rules."
+  fi
+  echo "Put the APPROVED source video in: work/$name/"
+}
+
+# ---------------- wrappers to the python tools ----------------
+c_select(){
+  [ $# -eq 0 ] && { read -rp "Path to source video: " v; [ -z "${v:-}" ] && return 1; set -- "$v"; }
+  "$PY" skills/clip-select/find_moments.py "$@"
+}
+c_publish(){ "$PY" skills/publish/publish.py "$@"; }
+c_ingest(){  "$PY" tools/ingest.py; }
+c_cover(){
+  if [ $# -lt 2 ]; then echo 'usage: ./clip cover <clip.mp4> "HOOK TEXT" [--pos top|center|bottom]'; return 1; fi
+  "$PY" tools/make_cover.py "$@"
+}
+
+# ---------------- cut a clip ----------------
+c_cut(){
+  local src="${1:-}" start="${2:-}" end="${3:-}" out="${4:-}"
+  if [ -z "$src" ] || [ -z "$start" ] || [ -z "$end" ]; then
+    echo "usage: ./clip cut <source> <start> <end> [out.mp4]"
+    echo "       times like 00:01:23 or plain seconds"; return 1; fi
+  [ -f "$src" ] || { echo "not found: $src"; return 1; }
+  [ -z "$out" ] && out="clip_$(echo "${start}-${end}" | tr -c 'A-Za-z0-9-' '_').mp4"
+  local enc="libx264"; ffmpeg -hide_banner -encoders 2>/dev/null | grep -qw libx264 || enc="mpeg4"
+  local vargs="-c:v libx264 -preset veryfast -crf 20"; [ "$enc" = mpeg4 ] && vargs="-c:v mpeg4 -q:v 4"
+  echo "cutting $src  $start → $end  (encoder: $enc)…"
+  if ffmpeg -y -hide_banner -loglevel error -i "$src" -ss "$start" -to "$end" $vargs -c:a aac -movflags +faststart "$out"; then
+    echo "wrote $out"
+  else echo "cut failed — check the timestamps."; return 1; fi
+}
+
+# ---------------- state ----------------
+c_state(){
+  [ -f STATE.md ] || { echo "no STATE.md — run ./clip setup"; return 1; }
+  hdr "STATE.md  (the resumable source of truth)"
+  sed 's/^/  /' STATE.md
+  echo
+}
+
+# ---------------- dashboard ----------------
+c_dashboard(){
+  hdr "Dashboard"
+  printf "  mode: ${B}%s${X}\n" "$(mode_label)"
+  local camps n; camps="$(ls -1 work 2>/dev/null | grep -v '^_')"; n="$(printf '%s\n' "$camps" | grep -c . 2>/dev/null || echo 0)"
+  printf "  campaigns (%s): %s\n" "${n:-0}" "$(printf '%s ' $camps)"
+  if [ -f knowledge/inbox-manifest.json ]; then
+    local ing; ing="$(grep -c '"name"' knowledge/inbox-manifest.json 2>/dev/null || echo 0)"
+    printf "  videos ingested: %s\n" "$ing"
+  fi
+  if [ -f knowledge/ledger.md ]; then
+    local posts; posts="$(grep -cE '^\| 20[0-9][0-9]-' knowledge/ledger.md 2>/dev/null || echo 0)"
+    printf "  posts logged: %s\n" "$posts"
+    if [ "${posts:-0}" -gt 0 ]; then
+      echo; echo "  recent posts:"; grep -E '^\| 20[0-9][0-9]-' knowledge/ledger.md | tail -5 | sed 's/^/    /'
+      echo; echo "  ${D}→ submit these URLs in Vyro; fill the views column as they grow.${X}"
+    fi
+  fi
+  echo
+}
+
+# ---------------- settings ----------------
+c_config(){
+  hdr "Settings & credentials"
+  echo "  .env: $([ -f .env ] && echo present || echo 'missing — run: ./clip setup')"
+  printf "  mode: ${B}%s${X}  %s\n" "$(mode_label)" "$(is_online && echo '— makes clips AND posts them' || echo '— makes clips only (./clip online to post)')"
+  echo
+  printf "   %-26s %s\n" "Upload-Post (free auto)" "$(is_set "$(env_val UPLOADPOST_API_KEY)" && echo "${G}configured${X}" || echo "${D}— not set${X}")"
+  printf "   %-26s %s\n" "Scheduler (publish)"  "$(is_set "$(env_val SCHEDULER_API_KEY)"   && echo "${G}configured${X}" || echo "${D}— not set${X}")"
+  printf "   %-26s %s\n" "TikTok official API"   "$(is_set "$(env_val TIKTOK_ACCESS_TOKEN)" && echo "${G}configured${X}" || echo "${D}— not set${X}")"
+  printf "   %-26s %s\n" "Composio (+ TikTok)"   "$(is_set "$(env_val COMPOSIO_API_KEY)"    && echo "${G}configured${X}" || echo "${D}— not set${X}")"
+  echo
+  echo "  edit:  ${B}\${EDITOR:-nano} .env${X}"
+  echo "  ${D}with no backend set, online mode falls back to the free local queue.${X}"
+  echo
+}
+
+c_mode(){
+  if [ -n "${1:-}" ]; then
+    case "$1" in
+      offline|clip)   set_env MODE offline; printf "mode → ${B}offline${X} (clips only)\n" ;;
+      online|publish) set_env MODE online;  printf "mode → ${B}online${X} (clips + posts via %s)\n" "$(auto_backend)" ;;
+      *) echo "usage: ./clip mode [offline|online]   (no arg = toggle)"; return 1 ;;
+    esac
+  else
+    if is_online; then set_env MODE offline; printf "mode: online → ${B}offline${X} (clips only)\n"
+    else set_env MODE online; printf "mode: offline → ${B}online${X} (clips + posts via %s)\n" "$(auto_backend)"; fi
+  fi
+}
+
+# ---------------- help ----------------
+c_help(){
+  banner
+  cat <<EOF
+
+${B}Hand this folder to an AI:${X} point it at ${B}AGENT-PLAYBOOK.md${X} and it runs the loop below.
+Drop videos in ${B}inbox/${X}; state lives in ${B}STATE.md${X} so any session/AI resumes.
+
+${B}Usage:${X}  ./clip [command]     (no command = interactive menu)
+
+  ${B}setup${X}                 first-run: folders, venv, .env, agent config, doctor
+  ${B}doctor${X}                check the environment and how to fix anything missing
+  ${B}ingest${X}                inventory new videos dropped in inbox/
+  ${B}new-campaign${X} <name>   make work/ + out/ folders and a brief template
+  ${B}select${X} <video> [..]   rank clip moments (--count --target --transcribe)
+  ${B}cut${X} <vid> <in> <out>  cut one clip between two timestamps
+  ${B}cover${X} <clip> "HOOK"   generate a cover image (frame + hook text)
+  ${B}publish${X} <args>        prepare/publish a clip (dry-run unless --send)
+  ${B}mode${X} | offline | online   show/switch mode (offline = clips only)
+  ${B}state${X}                 show STATE.md
+  ${B}dashboard${X}             campaigns + posts logged
+  ${B}config${X}                which publish backends are configured
+  ${B}help${X}                  this message
+
+${B}Pipeline:${X}  inbox → ingest → categorize → select → cut → content sheet + cover → (post if online)
+${D}Full walkthrough: GETTING-STARTED.md · Agent loop: AGENT-PLAYBOOK.md${X}
+EOF
+}
+
+# ---------------- interactive prompts (menu) ----------------
+i_select(){  read -rp "  source video: " v; [ -n "${v:-}" ] && c_select "$v"; }
+i_cut(){     read -rp "  source: " s; read -rp "  start (mm:ss or sec): " a; read -rp "  end: " b; c_cut "${s:-}" "${a:-}" "${b:-}"; }
+i_cover(){   read -rp "  clip (out/.../clip.mp4): " c; read -rp "  hook text: " hk; [ -n "${c:-}" ] && [ -n "${hk:-}" ] && c_cover "$c" "$hk"; }
+i_prepare(){ read -rp "  cut file (out/.../clip.mp4): " c; read -rp "  brief json (briefs/x.json): " b; c_publish prepare --clip "${c:-}" ${b:+--brief "$b"}; }
+i_publish(){
+  read -rp "  package json [post_package.json]: " p; p="${p:-post_package.json}"
+  local def; def="$(auto_backend)"
+  read -rp "  via [$def] (queue/uploadpost/scheduler/official/composio): " v; v="${v:-$def}"
+  echo "  ${D}(dry-run — review the output, then re-run with --send to publish)${X}"
+  c_publish publish --package "$p" --via "$v"
+}
+
+# ---------------- menu ----------------
+menu_screen(){
+  clear 2>/dev/null || true
+  banner
+  local BK MD; BK="$(backend_summary)"
+  if is_online; then MD="${G}online${X} ${D}(clips + posts via $(auto_backend))${X}"; else MD="${C}offline${X} ${D}(just makes clips)${X}"; fi
+  cat <<EOF
+
+  ${D}mode:${X} ${MD}
+  ${D}backends:${X}  ${BK}
+
+  ${B}━━ AGENT / INBOX ━━━━━━━━━━━━━━━━━━━━━━━━━━━${X}
+   ${B}i${X}  Ingest inbox (process dropped videos)
+   ${B}s${X}  Show STATE
+
+  ${B}━━ CREATE ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${X}
+   ${B}3${X}  New campaign        ${B}4${X}  Find clips        ${B}5${X}  Cut a clip
+   ${B}6${X}  Generate a cover
+
+  ${B}━━ PUBLISH ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${X}
+   ${B}7${X}  Prepare a post      ${B}8${X}  Publish / queue   ${D}(dry-run unless confirmed)${X}
+
+  ${B}━━ TRACK / SETUP ━━━━━━━━━━━━━━━━━━━━━━━━━━━━${X}
+   ${B}9${X}  Dashboard   ${B}1${X}  Setup   ${B}2${X}  Doctor
+
+  ${B}━━ CONFIG ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${X}
+   ${B}m${X}  Toggle mode (offline ⇄ online)   ${B}c${X}  Settings   ${B}h${X}  Help   ${B}q${X}  Quit
+EOF
+}
+
+menu(){
+  while true; do
+    menu_screen
+    printf "\n  ${B}❯${X} "; read -r choice || break
+    case "${choice:-}" in
+      i|I) c_ingest ;;
+      s|S) c_state ;;
+      1) c_setup ;;
+      2) c_doctor ;;
+      3) c_new_campaign ;;
+      4) i_select ;;
+      5) i_cut ;;
+      6) i_cover ;;
+      7) i_prepare ;;
+      8) if is_online; then i_publish
+         else printf "  ${Y}offline mode is on.${X} Clips are in ${B}out/<campaign>/${X}; switch with ${B}m${X} (or ${B}./clip online${X}) to post.\n"; fi ;;
+      9) c_dashboard ;;
+      m|M) c_mode ;;
+      c|C) c_config ;;
+      h|H|help|\?) c_help ;;
+      q|Q|0|quit|exit) printf "  bye.\n"; return 0 ;;
+      "") ;;
+      *) printf "  ${Y}pick an option from the menu.${X}\n" ;;
+    esac
+    printf "\n  ${D}— Enter to return to the menu —${X} "; read -r _ || break
+  done
+}
+
+# ---------------- dispatch ----------------
+case "${1:-menu}" in
+  menu)              menu ;;
+  setup)             c_setup ;;
+  doctor)            c_doctor ;;
+  ingest)            c_ingest ;;
+  new-campaign|nc)   shift; c_new_campaign "$@" ;;
+  select|clips)      shift; c_select "$@" ;;
+  cut)               shift; c_cut "$@" ;;
+  cover)             shift; c_cover "$@" ;;
+  publish)           shift; c_publish "$@" ;;
+  mode)              shift; c_mode "$@" ;;
+  offline)           c_mode offline ;;
+  online)            c_mode online ;;
+  state)             c_state ;;
+  dashboard|status)  c_dashboard ;;
+  config|settings)   c_config ;;
+  help|-h|--help)    c_help ;;
+  *) printf "unknown command: %s\n\n" "$1"; c_help; exit 1 ;;
+esac
