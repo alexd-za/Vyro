@@ -6,16 +6,12 @@ What this is:
   TikTok / Reels / Shorts, run by two AI agents (Claude Code + Codex) that share
   one set of instructions, skills, and memory.
 
-Three steps to running:
+Two steps to running:
   1) Open a terminal in this folder.
-  2) Install system tools (Fedora):
-        sudo dnf install -y python3 python3-pip git
-        sudo dnf install -y https://mirrors.rpmfusion.org/free/fedora/rpmfusion-free-release-$(rpm -E %fedora).noarch.rpm
-        sudo dnf install -y ffmpeg yt-dlp
-  3) Set it up and check it:
-        chmod +x clip
-        ./clip setup
-        ./clip doctor      # everything required should read [ok]
+  2) Run the installer (detects Fedora/Debian/Arch/macOS, asks before sudo):
+        ./install.sh          # or ./install.sh --yes for hands-off
+     It installs ffmpeg + python, creates the venv, offers the caption/cover
+     extras, and finishes with a health check (everything required = [ok]).
 
 Then read:  GETTING-STARTED.md   (full walkthrough: first campaign -> clips -> publish)
 Menu:       ./clip               (or ./clip help for all commands)

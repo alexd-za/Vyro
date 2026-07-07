@@ -193,10 +193,34 @@ def main():
                   "loudnorm=I=-14:TP=-1.5:LRA=11",
            "-c:v", "libx264", "-preset", "medium", "-crf", "19",
            "-pix_fmt", "yuv420p", "-r", "30", "-c:a", "aac", "-b:a", "192k",
-           "-movflags", "+faststart", str(out)]
-    if run(cmd).returncode != 0:
+           "-movflags", "+faststart"]
+    if render(cmd, str(out), dur) != 0:
         sys.exit("ffmpeg render failed")
     print(f"wrote {out}  ({W}x{H}, {dur:.1f}s, grade={args.grade}, reframe={args.reframe})")
+
+
+def render(cmd, out, dur):
+    """Run the encode; live progress bar on a TTY, quiet otherwise."""
+    if not (sys.stderr.isatty() and dur > 0):
+        return run(cmd + [out]).returncode
+    p = subprocess.Popen(cmd + ["-progress", "pipe:1", "-nostats", out],
+                         stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    bar = 34
+    for line in p.stdout:
+        if line.startswith("out_time_ms="):
+            try:
+                frac = min(1.0, int(line.split("=")[1]) / 1e6 / dur)
+            except ValueError:
+                continue
+            n = int(frac * bar)
+            print(f"\r  \033[38;5;209mrendering\033[0m "
+                  f"[\033[38;5;209m{'█' * n}\033[2m{'░' * (bar - n)}\033[0m] "
+                  f"{frac * 100:3.0f}%", end="", file=sys.stderr)
+    rc = p.wait()
+    print("\r\033[K", end="", file=sys.stderr)
+    if rc != 0:
+        print(p.stderr.read(), file=sys.stderr)
+    return rc
 
 
 if __name__ == "__main__":
