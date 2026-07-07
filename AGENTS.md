@@ -25,10 +25,12 @@ When one runs out of quota, switch to the other — same instructions, same skil
 ## The pipeline (stages)
 1. **Research** — find what's hooking on the campaign's topic right now. (skill: `trend-research`)
 2. **Select** — pick the 8–15 strongest moments from a source video. (skill: `clip-select`)
-3. **Cut & reframe** — vertical 9:16, trim to the moment, punch-in on faces. (ffmpeg / OpenCut)
-4. **Caption** — burn-in animated captions + a strong first-frame hook. (skill: `caption-burn`)
+3. **Cut** — trim to the moment. (`./clip cut`)
+4. **Produce** — vertical 9:16 reframe, punch-in, color grade, word-synced animated
+   captions with brand-keyword highlights, hook title, loudness. (`./clip produce`)
 5. **Polish** — optional motion graphics / overlays. (Lottie / GSAP / motion skills)
-6. **QA** — quality gate before anything ships. (skill: `quality-gate`)
+6. **QA** — `./clip sheet` contact sheet: confirm the footage shows what the hook
+   claims (never ship a mislabeled clip), and length fits the brief.
 7. **Package** — name, first-frame, per-platform export, caption text + hashtags pulled from the brief.
 8. **Schedule** — queue to a human-reviewed posting tool; log the live URL back for Vyro submission.
 

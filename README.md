@@ -13,7 +13,7 @@ A foundation for running **Claude Code + Codex as one shared system** on your Fe
 ```bash
 chmod +x clip
 ./clip setup     # folders, python venv, .env, agent config, then a health check
-./clip           # opens the menu — or use ./clip doctor, new-campaign, select, publish
+./clip           # opens the menu — or use ./clip doctor, select, cut, produce, publish
 ```
 Then (optional) open this folder in Claude Code or Codex and paste `INSTALL-PROMPT.md`
 to pull in the extra skills/tools. **Full walkthrough: `GETTING-STARTED.md`.**

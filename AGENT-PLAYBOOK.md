@@ -27,7 +27,17 @@ different AI; continuity lives in files on disk, not in this conversation.
    Read `candidates.md`.
 3. **Pick + cut.** Choose the strongest 8–15 by *hook quality* (use the transcript — does
    the first line stop a scroll? is there a payoff?). Cut each: `./clip cut work/<campaign>/<file> <in> <out> out/<campaign>/clip_NN.mp4`
-4. **Write a content sheet** per clip: copy `content-template.md` to
+4. **Produce.** Finish each cut — 9:16 reframe, word-synced captions, grade, loudness:
+   `./clip produce out/<campaign>/clip_NN.mp4 --brief briefs/<campaign>.json --hook "TITLE"`
+   Use `--reframe blur` when the crop would lose something important at the edges;
+   `--grade moody` for a calmer look; `--no-captions` for music-only footage (never
+   burn song lyrics as captions).
+5. **Verify the hook against the footage:** `./clip sheet out/<campaign>/clip_NN_final.mp4`
+   and look at every panel. **If the video doesn't clearly show what the hook/caption
+   claims, change the hook or drop the clip** — a mislabeled clip breaks the campaign's
+   "don't misrepresent" rules and reads as clickbait. Also confirm length satisfies the
+   brief's `min_seconds`/`max_seconds`.
+6. **Write a content sheet** per clip: copy `content-template.md` to
    `out/<campaign>/clip_NN.content.md` and fill it in:
    - **Hook** — the on-screen line for the first 1–2 seconds.
    - **3 caption options** — written in the campaign's voice.
@@ -38,12 +48,12 @@ different AI; continuity lives in files on disk, not in this conversation.
      `./clip cover out/<campaign>/clip_NN.mp4 "HOOK TEXT"` → writes `clip_NN_cover.png`.
      (Codex can run or restyle `tools/make_cover.py` if you want a different look.)
    - **Leave the two "your captions" slots blank** — those are for the user.
-5. **Publish — only if mode is `online`:**
+7. **Publish — only if mode is `online`:**
    `./clip publish prepare --clip out/<campaign>/clip_NN.mp4 --brief briefs/<campaign>.json`
    then `./clip publish publish --package post_package.json --via <backend> --send`.
    If mode is `offline`, stop here and tell the user where the clips, content sheets, and
    covers are.
-6. **Update `STATE.md`:** mark this video's stage, list what's posted vs pending, and write
+8. **Update `STATE.md`:** mark this video's stage, list what's posted vs pending, and write
    the single next action. Set the "Last updated / by" line. Do this after every meaningful
    step — it's what lets the next session resume cleanly.
 
@@ -62,6 +72,8 @@ different AI; continuity lives in files on disk, not in this conversation.
 ./clip mode | offline | online     show/switch mode
 ./clip select <video> --transcribe rank clip moments
 ./clip cut <video> <in> <out> <o>  cut one clip
+./clip produce <cut> --brief <b>   finish it: 9:16 + captions + grade
+./clip sheet <video>               contact sheet — hook vs footage QA
 ./clip cover <clip> "HOOK"         generate a cover image
 ./clip publish prepare|publish     build/publish a post (online mode)
 ./clip state                       show STATE.md

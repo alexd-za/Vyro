@@ -73,6 +73,7 @@ c_doctor(){
   [ -f skills/clip-select/find_moments.py ] && ok "clip-select skill" || bad "skills/clip-select/find_moments.py missing"
   [ -f skills/publish/publish.py ]          && ok "publish skill"     || bad "skills/publish/publish.py missing"
   [ -f tools/ingest.py ] && ok "ingest tool"  || bad "tools/ingest.py missing"
+  [ -f tools/produce.py ] && ok "produce tool (9:16 + captions + grade)" || bad "tools/produce.py missing"
   [ -f tools/make_cover.py ] && ok "cover tool" || bad "tools/make_cover.py missing"
   { [ -f AGENT-PLAYBOOK.md ] && [ -f STATE.md ]; } && ok "agent playbook + STATE" || bad "AGENT-PLAYBOOK.md / STATE.md missing"
   if [ -f AGENTS.md ] && [ -f CLAUDE.md ]; then ok "dual-agent config (AGENTS.md + CLAUDE.md)"; else bad "AGENTS.md / CLAUDE.md missing" "./clip setup"; fi
@@ -130,12 +131,17 @@ c_new_campaign(){
   "campaign": "$name",
   "caption_template": "WRITE A SCROLL-STOPPING FIRST LINE HERE",
   "required_hashtags": ["#fyp"],
+  "banned_phrases": [],
+  "min_seconds": 0,
+  "max_seconds": 0,
+  "brand_color": "#FF6A2C",
+  "highlight_words": [],
   "ai_generated": true,
   "is_branded": false,
   "disclosure": "",
   "video_url": "",
   "platforms": ["tiktok", "reels", "shorts"],
-  "notes": "Paste the campaign's rules: allowed source, length limits, required tags/disclosures."
+  "notes": "Paste the campaign's rules: allowed source, length limits, required tags/disclosures. banned_phrases = wording the brief forbids (e.g. health claims); min/max_seconds = length rules (0 = none); brand_color + highlight_words drive caption keyword highlighting in ./clip produce."
 }
 EOF
     echo "Created $brief — fill in the campaign's rules."
@@ -153,6 +159,24 @@ c_ingest(){  "$PY" tools/ingest.py; }
 c_cover(){
   if [ $# -lt 2 ]; then echo 'usage: ./clip cover <clip.mp4> "HOOK TEXT" [--pos top|center|bottom]'; return 1; fi
   "$PY" tools/make_cover.py "$@"
+}
+c_produce(){
+  if [ $# -lt 1 ]; then
+    echo 'usage: ./clip produce <cut.mp4> [--brief briefs/x.json] [--hook "TITLE"]'
+    echo '       [--reframe crop|blur] [--grade vibrant|moody|none] [--no-captions] [--out f.mp4]'
+    return 1
+  fi
+  "$PY" tools/produce.py "$@"
+}
+c_sheet(){  # contact sheet: verify the footage matches the hook BEFORE shipping
+  local src="${1:-}"; [ -z "$src" ] && { echo "usage: ./clip sheet <video> [out.png]"; return 1; }
+  [ -f "$src" ] || { echo "not found: $src"; return 1; }
+  local out="${2:-${src%.*}_sheet.png}"
+  local dur; dur="$(ffprobe -v error -show_entries format=duration -of default=nw=1:nk=1 "$src")"
+  local fps; fps="$(awk -v d="$dur" 'BEGIN{printf "%.4f", 9/(d>0?d:1)}')"
+  ffmpeg -y -hide_banner -loglevel error -i "$src" \
+    -vf "fps=$fps,scale=320:-2,tile=3x3:margin=4:padding=4" -frames:v 1 "$out" \
+    && echo "wrote $out — check every panel supports the hook before publishing."
 }
 
 # ---------------- cut a clip ----------------
@@ -245,6 +269,8 @@ ${B}Usage:${X}  ./clip [command]     (no command = interactive menu)
   ${B}new-campaign${X} <name>   make work/ + out/ folders and a brief template
   ${B}select${X} <video> [..]   rank clip moments (--count --target --transcribe)
   ${B}cut${X} <vid> <in> <out>  cut one clip between two timestamps
+  ${B}produce${X} <cut> [..]    finish a cut: 9:16 + captions + grade (--hook --brief)
+  ${B}sheet${X} <video>         contact sheet — verify footage matches the hook
   ${B}cover${X} <clip> "HOOK"   generate a cover image (frame + hook text)
   ${B}publish${X} <args>        prepare/publish a clip (dry-run unless --send)
   ${B}mode${X} | offline | online   show/switch mode (offline = clips only)
@@ -253,7 +279,7 @@ ${B}Usage:${X}  ./clip [command]     (no command = interactive menu)
   ${B}config${X}                which publish backends are configured
   ${B}help${X}                  this message
 
-${B}Pipeline:${X}  inbox → ingest → categorize → select → cut → content sheet + cover → (post if online)
+${B}Pipeline:${X}  inbox → ingest → categorize → select → cut → produce → sheet (QA) → content sheet + cover → (post if online)
 ${D}Full walkthrough: GETTING-STARTED.md · Agent loop: AGENT-PLAYBOOK.md${X}
 EOF
 }
@@ -262,6 +288,9 @@ EOF
 i_select(){  read -rp "  source video: " v; [ -n "${v:-}" ] && c_select "$v"; }
 i_cut(){     read -rp "  source: " s; read -rp "  start (mm:ss or sec): " a; read -rp "  end: " b; c_cut "${s:-}" "${a:-}" "${b:-}"; }
 i_cover(){   read -rp "  clip (out/.../clip.mp4): " c; read -rp "  hook text: " hk; [ -n "${c:-}" ] && [ -n "${hk:-}" ] && c_cover "$c" "$hk"; }
+i_produce(){ read -rp "  cut file: " c; read -rp "  hook title (optional): " hk; read -rp "  brief json (optional): " b
+             [ -n "${c:-}" ] && c_produce "$c" ${hk:+--hook "$hk"} ${b:+--brief "$b"}; }
+i_sheet(){   read -rp "  video: " v; [ -n "${v:-}" ] && c_sheet "$v"; }
 i_prepare(){ read -rp "  cut file (out/.../clip.mp4): " c; read -rp "  brief json (briefs/x.json): " b; c_publish prepare --clip "${c:-}" ${b:+--brief "$b"}; }
 i_publish(){
   read -rp "  package json [post_package.json]: " p; p="${p:-post_package.json}"
@@ -288,6 +317,7 @@ menu_screen(){
 
   ${B}━━ CREATE ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${X}
    ${B}3${X}  New campaign        ${B}4${X}  Find clips        ${B}5${X}  Cut a clip
+   ${B}p${X}  Produce (9:16 + captions + grade)            ${B}v${X}  Verify (contact sheet)
    ${B}6${X}  Generate a cover
 
   ${B}━━ PUBLISH ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${X}
@@ -313,6 +343,8 @@ menu(){
       3) c_new_campaign ;;
       4) i_select ;;
       5) i_cut ;;
+      p|P) i_produce ;;
+      v|V) i_sheet ;;
       6) i_cover ;;
       7) i_prepare ;;
       8) if is_online; then i_publish
@@ -338,6 +370,8 @@ case "${1:-menu}" in
   new-campaign|nc)   shift; c_new_campaign "$@" ;;
   select|clips)      shift; c_select "$@" ;;
   cut)               shift; c_cut "$@" ;;
+  produce)           shift; c_produce "$@" ;;
+  sheet)             shift; c_sheet "$@" ;;
   cover)             shift; c_cover "$@" ;;
   publish)           shift; c_publish "$@" ;;
   mode)              shift; c_mode "$@" ;;
