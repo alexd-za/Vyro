@@ -522,10 +522,24 @@ class Handler(BaseHTTPRequestHandler):
             self.guarded(lambda: self.send_json({"jobs": self.api.jobs.list()}))
         elif path == "/api/memory":
             self.guarded(lambda: self.send_json(self.api.memory()))
+        elif path == "/vendor/three.min.js":
+            self.guarded(self.serve_vendor_three)
         elif path.startswith("/media/"):
             self.guarded(lambda: self.serve_media(path[len("/media/"):]))
         else:
             self.send_json({"error": "not found"}, 404)
+
+    def serve_vendor_three(self):
+        p = self.api.root / "assets" / "vendor" / "three.min.js"
+        if not p.is_file():
+            raise ApiError(404, "three.min.js not installed")
+        body = p.read_bytes()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/javascript")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "max-age=86400")
+        self.end_headers()
+        self.wfile.write(body)
 
     def serve_media(self, rel):
         p = self.api.media_path(rel)
@@ -628,158 +642,306 @@ PAGE = r"""<!doctype html>
 <title>Clip Factory</title>
 <link rel="icon" href="data:,">
 <style>
+/* ============ design tokens — dark is the showcase, light via media query ============ */
 :root{
-  --bg:#faf8f5; --panel:#ffffff; --panel2:#f4f1ec; --border:#e7e2da;
-  --text:#221d16; --muted:#8d8578; --accent:#FF6A2C; --accent-ink:#c74a12;
-  --accent-soft:rgba(255,106,44,.09); --ok:#25904f; --err:#cf4433; --r:12px;
+  --bg:#0c0a09; --bg2:#141110;
+  --panel:rgba(255,255,255,.045); --panel2:rgba(255,255,255,.07);
+  --border:rgba(255,255,255,.09); --border2:rgba(255,255,255,.18);
+  --text:#f4f0e9; --muted:#a49a8b;
+  --accent:#FF6A2C; --accent2:#ffb45e; --accent-ink:#ffa06a;
+  --accent-soft:rgba(255,106,44,.13);
+  --ok:#4cc47e; --err:#ff7a62;
+  --r:16px; --r-sm:10px;
+  --grad:linear-gradient(135deg,#FF6A2C 0%,#ff8a3c 55%,#ffb45e 100%);
+  --glow:0 8px 30px rgba(255,106,44,.28);
+  --shadow:0 10px 34px rgba(0,0,0,.35);
+  --term-bg:#0a0908; --term-ink:#cbc1ae;
 }
-@media (prefers-color-scheme: dark){
+@media (prefers-color-scheme: light){
   :root{
-    --bg:#131110; --panel:#1c1917; --panel2:#242019; --border:#2e2922;
-    --text:#ede8e0; --muted:#948b7c; --accent:#FF6A2C; --accent-ink:#ff8a55;
-    --accent-soft:rgba(255,106,44,.13); --ok:#4cc47e; --err:#f07862;
+    --bg:#faf6f0; --bg2:#f2ebe1;
+    --panel:rgba(255,255,255,.66); --panel2:rgba(40,30,20,.055);
+    --border:rgba(40,30,20,.12); --border2:rgba(40,30,20,.24);
+    --text:#241d15; --muted:#87796a;
+    --accent-ink:#c74a12; --accent-soft:rgba(255,106,44,.10);
+    --ok:#1f8a4c; --err:#cf4433;
+    --glow:0 8px 26px rgba(255,106,44,.25);
+    --shadow:0 10px 30px rgba(40,30,20,.10);
   }
 }
 *{box-sizing:border-box;margin:0;padding:0}
+html{color-scheme:dark light}
 body{
-  background:var(--bg);color:var(--text);
+  background:
+    radial-gradient(1100px 520px at 50% -160px, rgba(255,106,44,.16), transparent 62%),
+    radial-gradient(900px 700px at 108% 12%, rgba(255,180,94,.06), transparent 58%),
+    var(--bg);
+  color:var(--text);
   font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
-  padding:0 20px 64px;
+  -webkit-font-smoothing:antialiased;
+  padding-bottom:72px;
 }
-.wrap{max-width:1180px;margin:0 auto}
-header{display:flex;align-items:center;gap:14px;padding:26px 2px 20px;flex-wrap:wrap}
-.wordmark{font-size:21px;font-weight:750;letter-spacing:-.02em}
-.wordmark b{color:var(--accent);font-weight:750}
-.badge{
-  font-size:11px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;
-  padding:4px 11px;border-radius:999px;border:1px solid var(--border);color:var(--muted);
-}
-.badge.online{color:var(--ok);border-color:currentColor}
-.badge.offline{color:var(--accent-ink);border-color:currentColor}
-header .hint{margin-left:auto;font-size:12.5px;color:var(--muted)}
-main{display:grid;grid-template-columns:minmax(0,1fr) 330px;gap:22px}
-@media(max-width:940px){main{grid-template-columns:1fr}}
-section{margin-bottom:26px}
-h2.label{
-  font-size:11px;font-weight:700;letter-spacing:.11em;text-transform:uppercase;
-  color:var(--muted);margin-bottom:10px;font-variant:all-small-caps;
-}
-.card{background:var(--panel);border:1px solid var(--border);border-radius:var(--r);padding:16px}
-.empty{color:var(--muted);font-size:13.5px;padding:10px 2px}
-code{background:var(--panel2);border-radius:5px;padding:1px 6px;font-size:12.5px}
+.wrap{max-width:1200px;margin:0 auto;padding:0 22px}
+::selection{background:var(--accent-soft);color:var(--text)}
 
-/* drop zone */
-.drop{
-  border:2px dashed var(--border);border-radius:16px;background:var(--panel);
-  padding:44px 24px;text-align:center;transition:border-color .15s,background .15s;
-  margin-bottom:26px;
+/* ============ hero ============ */
+.hero{position:relative;height:38vh;min-height:300px;max-height:480px;overflow:hidden;
+  background:#0c0a09;border-bottom:1px solid var(--border)}
+#fx{position:absolute;inset:0;width:100%;height:100%;display:block}
+.hero-veil{position:absolute;inset:0;pointer-events:none;
+  background:linear-gradient(180deg,rgba(12,10,9,.18) 0%,rgba(12,10,9,.30) 46%,var(--bg) 100%)}
+.hero.fallback #fx{display:none}
+.hero.fallback::before{content:"";position:absolute;inset:-45%;filter:blur(38px);
+  background:
+    radial-gradient(34% 44% at 28% 42%, rgba(255,106,44,.38), transparent 70%),
+    radial-gradient(30% 42% at 72% 56%, rgba(255,180,94,.22), transparent 70%),
+    radial-gradient(24% 34% at 52% 26%, rgba(255,70,30,.20), transparent 70%);
+  animation:heroDrift 18s ease-in-out infinite alternate}
+@keyframes heroDrift{to{transform:rotate(9deg) scale(1.18) translate(3%,5%)}}
+.hero-inner{position:relative;z-index:2;height:100%;max-width:1200px;margin:0 auto;
+  padding:0 22px;display:flex;flex-direction:column;justify-content:center;gap:10px}
+.crumb{font-size:11px;font-weight:700;letter-spacing:.22em;text-transform:uppercase;
+  color:rgba(255,180,120,.75)}
+.wordmark{
+  font-size:clamp(34px,6vw,60px);font-weight:800;letter-spacing:.14em;line-height:1.04;
+  background:linear-gradient(98deg,#fff 8%,#ffd9c2 38%,#FF6A2C 72%,#ffb45e 96%);
+  -webkit-background-clip:text;background-clip:text;color:transparent;
+  filter:drop-shadow(0 4px 30px rgba(255,106,44,.25));
 }
-.drop.over{border-color:var(--accent);background:var(--accent-soft)}
-.drop .glyph{
-  width:44px;height:44px;margin:0 auto 12px;border-radius:12px;
-  background:var(--accent-soft);color:var(--accent);display:grid;place-items:center;
-  font-size:20px;font-weight:700;
+.tagline{font-size:clamp(13.5px,1.6vw,16px);color:rgba(238,228,214,.82);max-width:560px}
+.hero-meta{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:6px}
+.badge{
+  font-size:10.5px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;
+  padding:5px 13px;border-radius:999px;border:1px solid rgba(255,255,255,.22);
+  color:rgba(255,255,255,.75);background:rgba(255,255,255,.06);
+  backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
 }
-.drop .t1{font-weight:650;font-size:16px}
-.drop .t2{color:var(--muted);font-size:13px;margin:4px 0 14px}
+.badge.online{color:#7fe0a8;border-color:rgba(127,224,168,.5)}
+.badge.offline{color:#ffb090;border-color:rgba(255,176,144,.5)}
+.hero .hint{font-size:12px;color:rgba(238,228,214,.5)}
+
+/* ============ shared bits ============ */
+section{margin-bottom:28px}
+h2.label{
+  font-size:11px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--muted);margin-bottom:12px;display:flex;align-items:center;gap:8px;
+}
+h2.label::before{content:"";width:16px;height:2px;border-radius:2px;background:var(--grad)}
+.card{
+  background:var(--panel);border:1px solid var(--border);border-radius:var(--r);
+  padding:18px;backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.05), var(--shadow);
+  transition:transform .25s ease, border-color .25s ease, box-shadow .25s ease;
+}
+.card:hover{border-color:var(--border2)}
+.empty{color:var(--muted);font-size:13.5px;padding:10px 2px}
+code{background:var(--panel2);border:1px solid var(--border);border-radius:6px;
+  padding:1px 6px;font-size:12.5px}
 button{
   font:inherit;font-size:13.5px;font-weight:600;color:var(--text);
-  background:var(--panel2);border:1px solid var(--border);border-radius:9px;
-  padding:7px 14px;cursor:pointer;
+  background:var(--panel2);border:1px solid var(--border);border-radius:10px;
+  padding:8px 15px;cursor:pointer;
+  transition:border-color .2s, color .2s, box-shadow .25s, transform .15s;
 }
-button:hover{border-color:var(--accent);color:var(--accent-ink)}
-button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
-button.primary:hover{filter:brightness(1.06);color:#fff}
-button:disabled{opacity:.5;cursor:default}
+button:hover{border-color:var(--accent);color:var(--accent-ink);transform:translateY(-1px)}
+button.primary{background:var(--grad);border:1px solid transparent;color:#180b04}
+button.primary:hover{color:#180b04;box-shadow:var(--glow)}
+button:disabled{opacity:.5;cursor:default;transform:none;box-shadow:none}
+input,select,textarea{
+  font:inherit;font-size:13.5px;color:var(--text);background:var(--bg2);
+  border:1px solid var(--border);border-radius:10px;padding:8px 11px;min-width:0;
+  transition:border-color .2s, box-shadow .2s;
+}
+input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent);
+  box-shadow:0 0 0 3px var(--accent-soft)}
+input::placeholder{color:var(--muted);opacity:.7}
 
-/* staged / unsorted */
-.staged{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:10px}
+/* ============ entrance motion ============ */
+.reveal{opacity:0;transform:translateY(16px);
+  transition:opacity .65s cubic-bezier(.2,.7,.3,1), transform .65s cubic-bezier(.2,.7,.3,1)}
+.reveal.in{opacity:1;transform:none}
+
+/* ============ stats strip ============ */
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin:26px 0 30px}
+@media(max-width:640px){.stats{grid-template-columns:1fr}}
+.stat{padding:18px 20px;position:relative;overflow:hidden}
+.stat::after{content:"";position:absolute;right:-30px;top:-30px;width:110px;height:110px;
+  border-radius:50%;background:radial-gradient(closest-side, var(--accent-soft), transparent);pointer-events:none}
+.stat .num{
+  font-size:34px;font-weight:800;letter-spacing:-.02em;line-height:1.1;
+  background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent;
+  font-variant-numeric:tabular-nums;
+}
+.stat .cap{font-size:11.5px;font-weight:700;letter-spacing:.13em;text-transform:uppercase;
+  color:var(--muted);margin-top:4px}
+
+/* ============ layout ============ */
+main{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:22px}
+@media(max-width:960px){main{grid-template-columns:1fr}}
+
+/* ============ drop zone ============ */
+.drop{
+  border:1.5px dashed var(--border2);border-radius:20px;background:var(--panel);
+  backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+  padding:46px 24px;text-align:center;margin-bottom:28px;position:relative;overflow:hidden;
+  transition:border-color .2s, background .2s, box-shadow .3s;
+}
+.drop::before{content:"";position:absolute;inset:0;pointer-events:none;opacity:0;
+  background:radial-gradient(60% 120% at 50% 0%, var(--accent-soft), transparent 70%);
+  transition:opacity .3s}
+.drop.over{border-color:var(--accent);animation:dropPulse 1.1s ease-in-out infinite}
+.drop.over::before{opacity:1}
+@keyframes dropPulse{
+  0%,100%{box-shadow:0 0 0 0 rgba(255,106,44,.0), 0 0 26px 2px rgba(255,106,44,.18)}
+  50%{box-shadow:0 0 0 4px rgba(255,106,44,.14), 0 0 42px 8px rgba(255,106,44,.30)}
+}
+.drop .glyph{
+  width:52px;height:52px;margin:0 auto 14px;border-radius:15px;
+  background:var(--grad);color:#180b04;display:grid;place-items:center;
+  font-size:22px;font-weight:800;box-shadow:var(--glow);
+}
+.drop .t1{font-weight:700;font-size:17px;letter-spacing:-.01em}
+.drop .t2{color:var(--muted);font-size:13px;margin:6px 0 16px}
+
+/* ============ staged / unsorted ============ */
+.staged{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:12px}
 .staged .who{flex:1;min-width:180px}
 .fname{font-weight:650;font-size:14px;word-break:break-all}
 .meta{color:var(--muted);font-size:12.5px}
 form.assign{display:flex;gap:8px}
-input,select,textarea{
-  font:inherit;font-size:13.5px;color:var(--text);background:var(--bg);
-  border:1px solid var(--border);border-radius:9px;padding:7px 10px;min-width:0;
-}
-input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent)}
 
-/* campaigns */
-.camp{margin-bottom:16px}
-.camp-head{display:flex;align-items:baseline;gap:10px;margin-bottom:10px}
-.camp-head .name{font-size:17px;font-weight:700;letter-spacing:-.01em}
+/* ============ campaign board ============ */
+.camp{margin-bottom:18px}
+.camp-head{display:flex;align-items:baseline;gap:10px;margin-bottom:12px;flex-wrap:wrap}
+.camp-head .name{font-size:18px;font-weight:750;letter-spacing:-.015em}
 .pill{
-  font-size:10.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;
-  border:1px solid var(--border);color:var(--muted);border-radius:999px;padding:2px 8px;
+  font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;
+  border:1px solid var(--border);color:var(--muted);border-radius:999px;padding:2.5px 9px;
 }
-.pill.final{color:var(--ok);border-color:currentColor}
-.pill.brief{color:var(--accent-ink);border-color:currentColor}
-ul.sources{list-style:none;margin-bottom:12px}
+.pill.final{color:var(--ok);border-color:currentColor;background:rgba(76,196,126,.08)}
+.pill.brief{color:var(--accent-ink);border-color:currentColor;background:var(--accent-soft)}
+ul.sources{list-style:none;margin-bottom:14px}
 ul.sources li{display:flex;gap:10px;align-items:baseline;padding:3px 0;flex-wrap:wrap}
 .clips{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:14px}
-.clip{background:var(--panel2);border:1px solid var(--border);border-radius:var(--r);
-  padding:10px;display:flex;flex-direction:column;gap:8px}
-.clip video{width:100%;aspect-ratio:9/16;max-height:340px;border-radius:8px;background:#000}
+.clip{background:var(--panel2);border:1px solid var(--border);border-radius:14px;
+  padding:10px;display:flex;flex-direction:column;gap:8px;
+  transition:transform .25s ease, border-color .25s ease, box-shadow .3s ease}
+.clip:hover{transform:translateY(-3px);border-color:var(--border2);
+  box-shadow:0 14px 34px rgba(0,0,0,.35), 0 0 0 1px var(--accent-soft)}
+.clip video{width:100%;aspect-ratio:9/16;max-height:340px;border-radius:10px;background:#000}
 .clip-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .clip-head .fname{flex:1;font-size:12.5px}
 details{border-top:1px solid var(--border);padding-top:6px}
-details summary{cursor:pointer;font-size:12.5px;color:var(--muted);user-select:none}
+details summary{cursor:pointer;font-size:12.5px;color:var(--muted);user-select:none;
+  transition:color .2s}
 details summary:hover{color:var(--accent-ink)}
 details img{width:100%;border-radius:8px;margin-top:8px}
 details pre{
   margin-top:8px;font-size:11.5px;line-height:1.5;white-space:pre-wrap;
   word-break:break-word;max-height:260px;overflow:auto;color:var(--text);
-  background:var(--bg);border-radius:8px;padding:10px;
+  background:var(--bg2);border-radius:8px;padding:10px;
 }
 form.produce{display:flex;flex-direction:column;gap:7px;border-top:1px solid var(--border);padding-top:9px}
 form.produce .row{display:flex;gap:7px}
 form.produce select{flex:1}
 
-/* new campaign */
+/* ============ new campaign ============ */
 #newcamp form{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media(max-width:640px){#newcamp form{grid-template-columns:1fr}}
 #newcamp .full{grid-column:1/-1}
 #newcamp label{display:flex;flex-direction:column;gap:5px;font-size:12.5px;color:var(--muted)}
 #newcamp .check{flex-direction:row;align-items:center;gap:8px;color:var(--text)}
 #newcamp input[type=checkbox]{accent-color:var(--accent);width:16px;height:16px}
-#newcamp .actions{grid-column:1/-1;display:flex;align-items:center;gap:12px}
+#newcamp .actions{grid-column:1/-1;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
 .fieldnote{font-size:11.5px;color:var(--muted)}
 .fieldnote.bad{color:var(--err);font-weight:600}
 
-/* rail */
-.job{margin-bottom:10px}
+/* ============ jobs rail ============ */
+.job{margin-bottom:12px;padding:14px}
 .job-head{display:flex;align-items:center;gap:8px}
 .dot{width:8px;height:8px;border-radius:50%;background:var(--muted);flex:none}
-.dot.running{background:var(--accent);animation:pulse 1.1s ease-in-out infinite}
+.dot.running{background:var(--accent);box-shadow:0 0 10px 1px rgba(255,106,44,.6);
+  animation:pulse 1.1s ease-in-out infinite}
 .dot.done{background:var(--ok)} .dot.error{background:var(--err)}
 @keyframes pulse{50%{opacity:.35}}
 .job .label2{flex:1;font-size:13px;font-weight:600;word-break:break-all}
+.job .bar{height:3px;border-radius:3px;overflow:hidden;background:var(--panel2);
+  margin-top:10px;position:relative}
+.job .bar i{position:absolute;inset:0;transform:translateX(-100%);
+  background:linear-gradient(90deg,transparent,var(--accent) 45%,var(--accent2) 55%,transparent);
+  animation:shimmer 1.5s linear infinite}
+@keyframes shimmer{to{transform:translateX(100%)}}
 .job pre{
-  margin-top:6px;font-size:11px;line-height:1.5;white-space:pre-wrap;word-break:break-word;
-  max-height:150px;overflow:auto;background:var(--panel2);border-radius:8px;padding:8px;color:var(--muted);
+  margin-top:8px;font-size:11px;line-height:1.5;white-space:pre-wrap;word-break:break-word;
+  max-height:150px;overflow:auto;background:var(--bg2);border-radius:8px;padding:8px;
+  color:var(--muted);
 }
+
+/* ============ memory terminal ============ */
+.term{background:var(--term-bg);border:1px solid var(--border);border-radius:var(--r);
+  padding:0;overflow:hidden;position:relative;box-shadow:var(--shadow)}
+.term::after{content:"";position:absolute;inset:0;pointer-events:none;opacity:.6;
+  background:repeating-linear-gradient(0deg, rgba(255,255,255,.028) 0 1px, transparent 1px 3px)}
+.term .tbar{display:flex;align-items:center;gap:6px;padding:10px 13px;
+  border-bottom:1px solid rgba(255,255,255,.07);background:rgba(255,255,255,.03)}
+.term .tbar b{width:9px;height:9px;border-radius:50%;display:inline-block}
+.term .tbar b:nth-child(1){background:#ff5f57}.term .tbar b:nth-child(2){background:#febc2e}
+.term .tbar b:nth-child(3){background:#28c840}
+.term .tbar span{margin-left:8px;font:11px/1 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  color:rgba(255,255,255,.42);letter-spacing:.05em}
 pre.mem{
-  font-size:11.5px;line-height:1.6;white-space:pre-wrap;word-break:break-word;
-  color:var(--muted);max-height:420px;overflow:auto;
+  font:11.5px/1.7 ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  white-space:pre-wrap;word-break:break-word;color:var(--term-ink);
+  max-height:420px;overflow:auto;padding:13px 15px;
 }
+pre.mem::after{content:"▌";color:var(--accent);animation:blink 1.15s steps(1) infinite}
+@keyframes blink{50%{opacity:0}}
+
+/* ============ toast ============ */
 #toast{
-  position:fixed;left:50%;bottom:24px;transform:translate(-50%,20px);opacity:0;
-  background:var(--text);color:var(--bg);font-size:13.5px;font-weight:600;
-  padding:10px 18px;border-radius:10px;pointer-events:none;transition:.25s;max-width:80vw;
+  position:fixed;left:50%;bottom:26px;transform:translate(-50%,20px);opacity:0;z-index:50;
+  background:rgba(20,17,16,.92);color:#f4f0e9;border:1px solid var(--border2);
+  backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+  font-size:13.5px;font-weight:600;padding:11px 20px;border-radius:12px;
+  pointer-events:none;transition:.28s;max-width:80vw;box-shadow:var(--shadow);
 }
 #toast.show{opacity:1;transform:translate(-50%,0)}
-#toast.err{background:var(--err);color:#fff}
+#toast.err{background:rgba(120,30,18,.94);border-color:rgba(255,122,98,.5);color:#fff}
+
+/* ============ reduced motion: calm everything ============ */
+@media (prefers-reduced-motion: reduce){
+  *,*::before,*::after{animation:none !important;transition:none !important}
+  .reveal{opacity:1;transform:none}
+  .clip:hover,button:hover{transform:none}
+}
 </style>
 </head>
 <body>
+
+<div class="hero" id="hero">
+  <canvas id="fx" aria-hidden="true"></canvas>
+  <div class="hero-veil"></div>
+  <div class="hero-inner">
+    <div class="crumb">Vyro · short-form pipeline</div>
+    <h1 class="wordmark">CLIP FACTORY</h1>
+    <p class="tagline">Approved campaign video in — scroll-stopping vertical clips out.</p>
+    <div class="hero-meta">
+      <span id="mode" class="badge">…</span>
+      <span class="hint">local · 127.0.0.1 · publishing stays in the terminal</span>
+    </div>
+  </div>
+</div>
+
 <div class="wrap">
-  <header>
-    <div class="wordmark">Clip<b>Factory</b></div>
-    <span id="mode" class="badge">…</span>
-    <span class="hint">local · 127.0.0.1 · posting stays in the terminal</span>
-  </header>
+  <div class="stats">
+    <div class="stat card reveal"><div class="num" id="stat-campaigns">0</div><div class="cap">Campaigns</div></div>
+    <div class="stat card reveal"><div class="num" id="stat-clips">0</div><div class="cap">Clips produced</div></div>
+    <div class="stat card reveal"><div class="num" id="stat-unsorted">0</div><div class="cap">Awaiting sort</div></div>
+  </div>
+
   <main>
     <div>
-      <div id="drop" class="drop">
+      <div id="drop" class="drop reveal">
         <div class="glyph">▼</div>
         <div class="t1">Drop a campaign video to start</div>
         <div class="t2">.mp4 · .mov · .mkv · .webm · .avi · .m4v — saved to <code>inbox/</code>, then ingested automatically</div>
@@ -797,7 +959,7 @@ pre.mem{
         <div id="campaigns"><div class="empty">Loading…</div></div>
       </section>
 
-      <section class="card" id="newcamp">
+      <section class="card reveal" id="newcamp">
         <h2 class="label">New campaign</h2>
         <form id="campform">
           <label>Name
@@ -819,12 +981,12 @@ pre.mem{
     </div>
 
     <aside>
-      <section>
+      <section class="reveal">
         <h2 class="label">Jobs</h2>
         <div id="jobs"><div class="empty">Nothing running — produce a clip or drop a video.</div></div>
       </section>
-      <section class="card">
-        <h2 class="label">Memory</h2>
+      <section class="term reveal">
+        <div class="tbar"><b></b><b></b><b></b><span>clip mem recall</span></div>
         <pre class="mem" id="memory">…</pre>
       </section>
     </aside>
@@ -832,6 +994,7 @@ pre.mem{
 </div>
 <div id="toast"></div>
 
+<script src="/vendor/three.min.js"></script>
 <script>
 "use strict";
 const $ = s => document.querySelector(s);
@@ -843,6 +1006,7 @@ const fmtSize = n => n == null ? "" :
   n >= 1<<20 ? (n/(1<<20)).toFixed(1)+" MB" :
   n >= 1024  ? Math.round(n/1024)+" KB" : n+" B";
 const fmtDur = s => s == null ? "" : Math.round(s)+"s";
+const REDUCED = matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 let toastT;
 function toast(msg, isErr){
@@ -856,6 +1020,115 @@ async function api(path, opts){
   if(!r.ok) throw new Error(j.error || (r.status + " " + r.statusText));
   return j;
 }
+
+/* ---------- entrance motion (IntersectionObserver + CSS transitions) ---------- */
+let booted = false;   // after the first paint settles, new renders appear instantly
+const io = (!REDUCED && "IntersectionObserver" in window)
+  ? new IntersectionObserver(entries => {
+      for(const en of entries){
+        if(en.isIntersecting){ en.target.classList.add("in"); io.unobserve(en.target); }
+      }
+    }, { rootMargin: "0px 0px -6% 0px" })
+  : null;
+function revealIn(scope){
+  const els = (scope || document).querySelectorAll(".reveal:not(.in)");
+  let i = 0;
+  for(const el of els){
+    if(!io || booted){ el.classList.add("in"); continue; }
+    el.style.transitionDelay = Math.min(i++ * 70, 420) + "ms";
+    io.observe(el);
+  }
+}
+revealIn(document);
+setTimeout(() => { booted = true; }, 2500);
+
+/* ---------- animated stat counters ---------- */
+const statVals = {};
+function setStat(id, v){
+  const el = document.getElementById(id);
+  if(!el) return;
+  const from = statVals[id] ?? 0;
+  statVals[id] = v;
+  if(REDUCED || from === v){ el.textContent = v; return; }
+  const t0 = performance.now(), dur = 700;
+  (function tick(t){
+    const k = Math.min(1, (t - t0) / dur), e = 1 - Math.pow(1 - k, 3);
+    el.textContent = Math.round(from + (v - from) * e);
+    if(k < 1) requestAnimationFrame(tick);
+  })(t0);
+}
+
+/* ---------- three.js hero (graceful fallback if the vendor file is missing) ---------- */
+(function heroFX(){
+  const hero = document.getElementById("hero");
+  const canvas = document.getElementById("fx");
+  if(REDUCED || typeof THREE === "undefined"){ hero.classList.add("fallback"); return; }
+  let renderer;
+  try{
+    renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true,
+                                         powerPreference: "low-power" });
+  }catch(e){ hero.classList.add("fallback"); return; }
+  const scene = new THREE.Scene();
+  scene.fog = new THREE.FogExp2(0x0c0a09, 0.052);
+  const cam = new THREE.PerspectiveCamera(55, 2, 0.1, 100);
+  cam.position.set(0, 4.4, 11);
+
+  // a drifting wave-field of glowing orange->amber particles
+  const COLS = 128, ROWS = 46, SX = 0.36, SZ = 0.44, N = COLS * ROWS;
+  const pos = new Float32Array(N * 3), col = new Float32Array(N * 3);
+  const phase = new Float32Array(N);
+  const cA = new THREE.Color(0xff6a2c), cB = new THREE.Color(0xffb45e);
+  const c = new THREE.Color();
+  let i = 0;
+  for(let r = 0; r < ROWS; r++) for(let q = 0; q < COLS; q++){
+    pos[i*3]   = (q - COLS/2) * SX;
+    pos[i*3+1] = 0;
+    pos[i*3+2] = (r - ROWS/2) * SZ;
+    c.copy(cA).lerp(cB, Math.min(1, q/COLS * .85 + Math.random() * .25));
+    col[i*3] = c.r; col[i*3+1] = c.g; col[i*3+2] = c.b;
+    phase[i] = Math.random() * Math.PI * 2;
+    i++;
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+  geo.setAttribute("color", new THREE.BufferAttribute(col, 3));
+  const mat = new THREE.PointsMaterial({
+    size: 0.075, vertexColors: true, transparent: true, opacity: 0.85,
+    depthWrite: false, blending: THREE.AdditiveBlending, sizeAttenuation: true,
+  });
+  scene.add(new THREE.Points(geo, mat));
+  const posAttr = geo.attributes.position;
+
+  function resize(){
+    const w = hero.clientWidth, h = hero.clientHeight;
+    renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
+    renderer.setSize(w, h, false);
+    cam.aspect = w / h; cam.updateProjectionMatrix();
+  }
+  addEventListener("resize", resize);
+  resize();
+
+  let raf = 0;
+  function frame(t){
+    raf = requestAnimationFrame(frame);
+    const s = t * 0.00045;
+    for(let k = 0; k < N; k++){
+      const x = pos[k*3], z = pos[k*3+2];
+      posAttr.array[k*3+1] =
+        Math.sin(x * 0.55 + s * 2.2) * 0.55 +
+        Math.cos(z * 0.50 - s * 1.6) * 0.45 +
+        Math.sin(phase[k] + s * 3.0) * 0.08;
+    }
+    posAttr.needsUpdate = true;
+    cam.position.x = Math.sin(s * 0.5) * 0.7;
+    cam.lookAt(0, 0.35, 0);
+    renderer.render(scene, cam);
+  }
+  const start = () => { if(!raf) raf = requestAnimationFrame(frame); };
+  const stop  = () => { cancelAnimationFrame(raf); raf = 0; };
+  document.addEventListener("visibilitychange", () => document.hidden ? stop() : start());
+  start();
+})();
 
 /* ---------- upload ---------- */
 const drop = $("#drop");
@@ -892,7 +1165,7 @@ function suggestSlug(name){
              .replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40);
 }
 function unsortedRow(u){
-  return `<div class="card staged">
+  return `<div class="card staged reveal">
     <div class="who"><div class="fname">${esc(u.name)}</div>
       <div class="meta">${fmtDur(u.duration)}${u.duration!=null?" · ":""}${fmtSize(u.size)} · id ${esc(u.id)}</div></div>
     <form class="assign" data-id="${esc(u.id)}">
@@ -929,7 +1202,7 @@ function campaignCard(c){
     : `<li class="empty">no source video yet — assign one from staged, or drop one above</li>`;
   const clips = c.clips.length ? c.clips.map(clipCard).join("")
     : `<div class="empty">No clips yet — cut moments with <code>./clip cut</code>, they show up here.</div>`;
-  return `<div class="card camp">
+  return `<div class="card camp reveal">
     <div class="camp-head"><span class="name">${esc(c.name)}</span>
       ${c.has_brief ? '<span class="pill brief">brief</span>' : '<span class="pill">no brief</span>'}
       <span class="meta">${c.clips.length} clip${c.clips.length===1?"":"s"}</span></div>
@@ -941,11 +1214,15 @@ async function refreshState(){
     const s = await api("/api/state");
     const badge = $("#mode");
     badge.textContent = s.mode; badge.className = "badge " + s.mode;
+    setStat("stat-campaigns", s.campaigns.length);
+    setStat("stat-clips", s.campaigns.reduce((n, c) => n + c.clips.length, 0));
+    setStat("stat-unsorted", s.unsorted.length);
     $("#unsorted-sec").hidden = !s.unsorted.length;
     $("#unsorted").innerHTML = s.unsorted.map(unsortedRow).join("");
     $("#campaigns").innerHTML = s.campaigns.length
       ? s.campaigns.map(campaignCard).join("")
       : `<div class="empty">No campaigns yet — drop a video to start, or create one below.</div>`;
+    revealIn($("#unsorted")); revealIn($("#campaigns"));
   }catch(e){ toast("state: " + e.message, true); }
 }
 
@@ -1024,6 +1301,7 @@ async function refreshJobs(){
         <div class="job-head"><span class="dot ${esc(j.status)}"></span>
           <span class="label2">${esc(j.label)}</span>
           <span class="meta">${j.elapsed}s</span></div>
+        ${j.status === "running" ? '<div class="bar"><i></i></div>' : ""}
         ${j.tail ? `<pre>${esc(j.tail.split("\n").slice(-12).join("\n").trim())}</pre>` : ""}
       </div>`).join("")
       : `<div class="empty">Nothing running — produce a clip or drop a video.</div>`;
@@ -1056,6 +1334,8 @@ def self_check():
     root = Path(tempfile.mkdtemp(prefix="clipui-check-"))
     for d in ("work", "out", "briefs", "inbox", "knowledge"):
         (root / d).mkdir()
+    (root / "assets" / "vendor").mkdir(parents=True)
+    (root / "assets" / "vendor" / "three.min.js").write_bytes(b"window.THREE={};")
     api = Api(root)
 
     # 1. path traversal is rejected
@@ -1132,6 +1412,12 @@ def self_check():
         base = f"http://127.0.0.1:{port}"
         with urllib.request.urlopen(base + "/") as resp:
             assert resp.status == 200 and b"Clip Factory" in resp.read()
+
+        # vendor three.js is served with the right type when the file exists
+        with urllib.request.urlopen(base + "/vendor/three.min.js") as resp:
+            assert resp.status == 200, resp.status
+            assert resp.headers["Content-Type"] == "application/javascript"
+            assert resp.read() == b"window.THREE={};"
         with urllib.request.urlopen(base + "/api/state") as resp:
             st = json.loads(resp.read())
             assert st["mode"] == "offline"

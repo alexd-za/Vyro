@@ -54,16 +54,35 @@ backend_summary(){
 }
 
 banner(){
-  if [ "$UTF8" = 1 ]; then
-    printf "${Y}  ╭──────────────────────────────────────────────╮${X}\n"
-    printf "${Y}  │${X}   ${Y}▶▶${X}  ${B}C L I P   F A C T O R Y${X}               ${Y}│${X}\n"
-    printf "${Y}  │${X}       ${D}approved footage → clips that earn${X}     ${Y}│${X}\n"
-    printf "${Y}  ╰──────────────────────────────────────── v2.1 ─╯${X}\n"
+  local cols="${COLUMNS:-$(tput cols 2>/dev/null || echo 80)}"
+  case "$cols" in ''|*[!0-9]*) cols=80 ;; esac
+  if [ "$UTF8" = 1 ] && [ "$cols" -ge 66 ]; then
+    # ANSI Shadow wordmark, two stacked words (CLIP 27 cols, FACTORY 59 cols)
+    local art=(
+' ██████╗██╗     ██╗██████╗ '
+'██╔════╝██║     ██║██╔══██╗'
+'██║     ██║     ██║██████╔╝'
+'██║     ██║     ██║██╔═══╝ '
+'╚██████╗███████╗██║██║     '
+' ╚═════╝╚══════╝╚═╝╚═╝     '
+'███████╗ █████╗  ██████╗████████╗ ██████╗ ██████╗ ██╗   ██╗'
+'██╔════╝██╔══██╗██╔════╝╚══██╔══╝██╔═══██╗██╔══██╗╚██╗ ██╔╝'
+'█████╗  ███████║██║        ██║   ██║   ██║██████╔╝ ╚████╔╝ '
+'██╔══╝  ██╔══██║██║        ██║   ██║   ██║██╔══██╗  ╚██╔╝  '
+'██║     ██║  ██║╚██████╗   ██║   ╚██████╔╝██║  ██║   ██║   '
+'╚═╝     ╚═╝  ╚═╝ ╚═════╝   ╚═╝    ╚═════╝ ╚═╝  ╚═╝   ╚═╝   '
+    )
+    local grad=(202 202 202 208 208 208 214 214 214 220 220 220) i
+    for i in "${!art[@]}"; do
+      if [ -n "$G" ]; then printf '  \e[38;5;%sm%s\e[0m\n' "${grad[$i]}" "${art[$i]}"
+      else printf '  %s\n' "${art[$i]}"; fi
+      if [ -t 1 ]; then sleep 0.03; fi
+    done
+    printf "  ${D}approved footage → clips that earn · v2.2${X}\n"
+  elif [ "$UTF8" = 1 ]; then
+    printf "  ${Y}${B}▶▶ CLIP FACTORY${X} ${D}— approved footage → clips that earn${X}\n"
   else
-    printf "${Y}  +----------------------------------------------+${X}\n"
-    printf "${Y}  |${X}   ${Y}>>${X}  ${B}C L I P   F A C T O R Y${X}               ${Y}|${X}\n"
-    printf "${Y}  |${X}       ${D}approved footage -> clips that earn${X}    ${Y}|${X}\n"
-    printf "${Y}  +---------------------------------------- v2.1 -+${X}\n"
+    printf "  ${Y}${B}>> CLIP FACTORY${X} ${D}-- approved footage -> clips that earn${X}\n"
   fi
 }
 
@@ -419,17 +438,21 @@ i_publish(){
 }
 
 # ---------------- menu ----------------
-sect(){ printf "  ${D}─── ${X}${B}%s${X} ${D}%s${X}\n" "$1" "$(printf '─%.0s' $(seq 1 $((40-${#1}))))"; }
+sect(){  # orange rule + uppercase gray label (labels are pure ASCII)
+  local t r='──'; t="$(printf '%s' "$1" | tr '[:lower:]' '[:upper:]')"
+  [ "$UTF8" = 1 ] || r='--'
+  printf "\n  ${Y}%s${X} ${D}%s${X} ${Y}%s${X}\n" "$r" "$t" \
+    "$(printf "${r:0:1}%.0s" $(seq 1 $((40-${#t}))))"
+}
 item(){ printf "   ${Y}${B}%s${X}  %-24s" "$1" "$2"; [ -n "${3:-}" ] && printf "${Y}${B}%s${X}  %-22s" "$3" "$4"; printf "\n"; }
 
 menu_screen(){
   clear 2>/dev/null || true
   banner
   local MD
-  if is_online; then MD="$(pill ONLINE 34) ${D}clips + posts via $(auto_backend)${X}"
-  else MD="$(pill OFFLINE 208) ${D}just makes clips — no posting${X}"; fi
-  printf "\n  %b\n" "$MD"
-  printf "  ${D}backends${X}  %b\n\n" "$(backend_summary)"
+  if is_online; then MD="$(pill ONLINE 34)"
+  else MD="$(pill OFFLINE 208)"; fi
+  printf "\n  ${D}MODE${X}  %b   ${D}BACKENDS${X}  %b\n" "$MD" "$(backend_summary)"
   sect "agent / inbox"
   item i "Ingest inbox"           s "Show state"
   sect "create"

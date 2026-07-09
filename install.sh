@@ -17,12 +17,10 @@ DONE_LIST=(); SKIP_LIST=()
 note_done(){ DONE_LIST+=("$1"); }
 note_skip(){ SKIP_LIST+=("$1"); }
 
-step(){
-  if [ "$UTF8" = 1 ]; then
-    printf "\n${O}╭─ ${B}%s${X}${O} ${X}\n" "$1"
-  else
-    printf "\n${O}+- ${B}%s${X}\n" "$1"
-  fi
+step(){  # orange rule + step title (matches the ./clip menu styling)
+  local r='─' t="$1"; [ "$UTF8" = 1 ] || r='-'
+  printf "\n${O}%s%s${X} ${B}%s${X} ${O}%s${X}\n" "$r" "$r" "$t" \
+    "$(printf "$r%.0s" $(seq 1 $((44-${#t}))))"
 }
 ok(){   printf "  ${G}✓${X} %s\n" "$1"; }
 skip(){ printf "  ${D}· %s${X}\n" "$1"; }
@@ -53,17 +51,39 @@ spin(){  # spin "label" cmd...  — braille spinner while a step runs
   rm -f "$tmp"; return $rc
 }
 
-if [ "$UTF8" = 1 ]; then
-  printf "${O}  ╭──────────────────────────────────────────────╮${X}\n"
-  printf "${O}  │${X}   ${O}▶▶${X}  ${B}C L I P   F A C T O R Y${X}               ${O}│${X}\n"
-  printf "${O}  │${X}       ${D}installer — from zero to first clip${X}    ${O}│${X}\n"
-  printf "${O}  ╰──────────────────────────────────────────────╯${X}\n"
-else
-  printf "${O}  +----------------------------------------------+${X}\n"
-  printf "${O}  |${X}   ${O}>>${X}  ${B}C L I P   F A C T O R Y${X}               ${O}|${X}\n"
-  printf "${O}  |${X}       ${D}installer -- from zero to first clip${X}   ${O}|${X}\n"
-  printf "${O}  +----------------------------------------------+${X}\n"
-fi
+banner(){
+  local cols="${COLUMNS:-$(tput cols 2>/dev/null || echo 80)}"
+  case "$cols" in ''|*[!0-9]*) cols=80 ;; esac
+  if [ "$UTF8" = 1 ] && [ "$cols" -ge 66 ]; then
+    # ANSI Shadow wordmark, two stacked words (CLIP 27 cols, FACTORY 59 cols)
+    local art=(
+' ██████╗██╗     ██╗██████╗ '
+'██╔════╝██║     ██║██╔══██╗'
+'██║     ██║     ██║██████╔╝'
+'██║     ██║     ██║██╔═══╝ '
+'╚██████╗███████╗██║██║     '
+' ╚═════╝╚══════╝╚═╝╚═╝     '
+'███████╗ █████╗  ██████╗████████╗ ██████╗ ██████╗ ██╗   ██╗'
+'██╔════╝██╔══██╗██╔════╝╚══██╔══╝██╔═══██╗██╔══██╗╚██╗ ██╔╝'
+'█████╗  ███████║██║        ██║   ██║   ██║██████╔╝ ╚████╔╝ '
+'██╔══╝  ██╔══██║██║        ██║   ██║   ██║██╔══██╗  ╚██╔╝  '
+'██║     ██║  ██║╚██████╗   ██║   ╚██████╔╝██║  ██║   ██║   '
+'╚═╝     ╚═╝  ╚═╝ ╚═════╝   ╚═╝    ╚═════╝ ╚═╝  ╚═╝   ╚═╝   '
+    )
+    local grad=(202 202 202 208 208 208 214 214 214 220 220 220) i
+    for i in "${!art[@]}"; do
+      if [ -n "$O" ]; then printf '  \e[38;5;%sm%s\e[0m\n' "${grad[$i]}" "${art[$i]}"
+      else printf '  %s\n' "${art[$i]}"; fi
+      if [ -t 1 ]; then sleep 0.03; fi
+    done
+    printf "  ${D}installer — from zero to first clip${X}\n"
+  elif [ "$UTF8" = 1 ]; then
+    printf "  ${O}${B}▶▶ CLIP FACTORY${X} ${D}— installer — from zero to first clip${X}\n"
+  else
+    printf "  ${O}${B}>> CLIP FACTORY${X} ${D}-- installer: from zero to first clip${X}\n"
+  fi
+}
+banner
 
 step "System packages (ffmpeg, python3)"
 NEED=()
@@ -117,15 +137,15 @@ step "Health check"
 chmod +x clip
 ./clip doctor
 
-hl(){ if [ "$UTF8" = 1 ]; then printf '─%.0s' $(seq 1 46); else printf -- '-%.0s' $(seq 1 46); fi; }
-if [ "$UTF8" = 1 ]; then TL="╭"; TR="╮"; BL="╰"; BR="╯"; V="│"; else TL="+"; TR="+"; BL="+"; BR="+"; V="|"; fi
-printf "\n${O}%s%s%s${X}\n" "$TL" "$(hl)" "$TR"
-printf "${O}%s${X} ${B}%-44s${X} ${O}%s${X}\n" "$V" "Install summary" "$V"
-for d in "${DONE_LIST[@]:-}"; do [ -n "$d" ] && printf "${O}%s${X}  ${G}✓${X} %-41s ${O}%s${X}\n" "$V" "$d" "$V"; done
-for s in "${SKIP_LIST[@]:-}"; do [ -n "$s" ] && printf "${O}%s${X}  ${D}·${X} ${D}%-41s${X} ${O}%s${X}\n" "$V" "$s" "$V"; done
-printf "${O}%s${X} %-44s ${O}%s${X}\n" "$V" "" "$V"
-printf "${O}%s${X} ${B}%-44s${X} ${O}%s${X}\n" "$V" "Next steps" "$V"
-printf "${O}%s${X}   %-42s ${O}%s${X}\n" "$V" "./clip demo   safe end-to-end tour" "$V"
-printf "${O}%s${X}   %-42s ${O}%s${X}\n" "$V" "./clip ui     open the web dashboard" "$V"
-printf "${O}%s${X}   %-42s ${O}%s${X}\n" "$V" "./clip        the terminal menu" "$V"
-printf "${O}%s%s%s${X}\n" "$BL" "$(hl)" "$BR"
+srule(){  # orange rule + UPPERCASE gray label (matches the ./clip menu styling)
+  local r='─' t="$1"; [ "$UTF8" = 1 ] || r='-'
+  printf "\n${O}%s%s${X} ${D}%s${X} ${O}%s${X}\n" "$r" "$r" "$t" \
+    "$(printf "$r%.0s" $(seq 1 $((44-${#t}))))"
+}
+srule "INSTALL SUMMARY"
+for d in "${DONE_LIST[@]:-}"; do [ -n "$d" ] && printf "  ${G}✓${X} %s\n" "$d"; done
+for s in "${SKIP_LIST[@]:-}"; do [ -n "$s" ] && printf "  ${D}· %s${X}\n" "$s"; done
+srule "NEXT STEPS"
+printf "   ${B}%-14s${X}%s\n" "./clip demo" "safe end-to-end tour"
+printf "   ${B}%-14s${X}%s\n" "./clip ui" "open the web dashboard"
+printf "   ${B}%-14s${X}%s\n" "./clip" "the terminal menu"
