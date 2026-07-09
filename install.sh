@@ -18,6 +18,13 @@ die(){  printf "  ${R}✗ %s${X}\n" "$1"; exit 1; }
 ask(){  [ $YES -eq 1 ] && return 0; read -rp "  $1 [Y/n] " a; [ "${a:-y}" != "n" ]; }
 have(){ command -v "$1" >/dev/null 2>&1; }
 
+seed_knowledge(){  # idempotent knowledge-base seed (was setup-agents.sh)
+  mkdir -p skills knowledge work out
+  [ -f knowledge/INDEX.md ] || printf '# Knowledge index\n\n- learnings.md — why clips won or lost\n- ledger.md — every shipped clip + its live URL + views\n- MEMORY.md — digest of the shared AI memory (./clip mem)\n' > knowledge/INDEX.md
+  [ -f knowledge/learnings.md ] || printf '# Learnings\n\nOne line per clip that over- or under-performed, and why.\n' > knowledge/learnings.md
+  [ -f knowledge/ledger.md ] || printf '# Ledger\n\n| date | campaign | clip | platform | url | views |\n|------|----------|------|----------|-----|-------|\n' > knowledge/ledger.md
+}
+
 spin(){  # spin "label" cmd...  — braille spinner while a step runs
   local label="$1"; shift
   [ -t 1 ] || { "$@" >/dev/null 2>&1; return $?; }
@@ -75,7 +82,7 @@ fi
 
 step "Project setup (folders, venv, .env)"
 mkdir -p skills knowledge work out briefs inbox tools
-[ -f setup-agents.sh ] && bash setup-agents.sh >/dev/null
+seed_knowledge >/dev/null
 [ -f .env ] || { [ -f .env.example ] && cp .env.example .env && ok "created .env from template"; }
 if [ ! -d .venv ]; then spin "create python venv" python3 -m venv .venv || die "venv failed"; else skip "venv exists"; fi
 PIP=".venv/bin/pip"

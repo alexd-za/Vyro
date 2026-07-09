@@ -3,6 +3,10 @@
 You are setting up the toolchain for a **Vyro clipping pipeline** on a Fedora Linux machine.
 Work carefully and **safely**. The user is watching. Do not run anything you can't explain in one line.
 
+> **The basics are one command now:** `./install.sh` covers ffmpeg, python, the venv, and the
+> caption/cover extras. This prompt is for the OPTIONAL layer beyond that — vetted third-party
+> skills, publishing-tool selection, and Codex wiring. Skip any step install.sh already did.
+
 ## Ground rules (non-negotiable)
 - Before installing anything from a URL, fetch its README and tell me, in one line: what it is, whether the repo actually exists, and whether it looks maintained. If you can't verify it, **SKIP it and say why**. Never pipe `curl` into `bash` from an unverified source.
 - Install **one tool at a time**. After each, run its `--version`/`--help` to confirm it works. Stop and ask if anything fails or wants root beyond a normal package install.
