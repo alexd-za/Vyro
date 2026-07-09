@@ -8,10 +8,22 @@ set -uo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
 
 YES=0; [ "${1:-}" = "--yes" ] || [ "${1:-}" = "-y" ] && YES=1
-if [ -t 1 ]; then G=$'\e[32m'; R=$'\e[31m'; Y=$'\e[33m'; O=$'\e[38;5;209m'; B=$'\e[1m'; D=$'\e[2m'; X=$'\e[0m'
+# light/dark-safe palette + NO_COLOR standard support
+if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
+  G=$'\e[32m'; R=$'\e[31m'; Y=$'\e[38;5;209m'; O=$'\e[38;5;209m'; B=$'\e[1m'; D=$'\e[38;5;245m'; X=$'\e[0m'
 else G=; R=; Y=; O=; B=; D=; X=; fi
+UTF8=1; case "${LC_ALL:-${LANG:-}}" in *[Uu][Tt][Ff]*8*) ;; *) UTF8=0 ;; esac
+DONE_LIST=(); SKIP_LIST=()
+note_done(){ DONE_LIST+=("$1"); }
+note_skip(){ SKIP_LIST+=("$1"); }
 
-step(){ printf "\n${O}${B}▸ %s${X}\n" "$1"; }
+step(){
+  if [ "$UTF8" = 1 ]; then
+    printf "\n${O}╭─ ${B}%s${X}${O} ${X}\n" "$1"
+  else
+    printf "\n${O}+- ${B}%s${X}\n" "$1"
+  fi
+}
 ok(){   printf "  ${G}✓${X} %s\n" "$1"; }
 skip(){ printf "  ${D}· %s${X}\n" "$1"; }
 die(){  printf "  ${R}✗ %s${X}\n" "$1"; exit 1; }
@@ -41,21 +53,24 @@ spin(){  # spin "label" cmd...  — braille spinner while a step runs
   rm -f "$tmp"; return $rc
 }
 
-printf "${O}"
-cat <<'ART'
-    ___ _    ___ ___   ___ _   ___ _____ ___  _____   __
-   / __| |  |_ _| _ \ | __/_\ / __|_   _/ _ \| _ \ \ / /
-  | (__| |__ | ||  _/ | _/ _ \ (__  | || (_) |   /\ V /
-   \___|____|___|_|   |_/_/ \_\___| |_| \___/|_|_\ |_|
-ART
-printf "${X}  ${D}installer — approved footage → clips that earn${X}\n"
+if [ "$UTF8" = 1 ]; then
+  printf "${O}  ╭──────────────────────────────────────────────╮${X}\n"
+  printf "${O}  │${X}   ${O}▶▶${X}  ${B}C L I P   F A C T O R Y${X}               ${O}│${X}\n"
+  printf "${O}  │${X}       ${D}installer — from zero to first clip${X}    ${O}│${X}\n"
+  printf "${O}  ╰──────────────────────────────────────────────╯${X}\n"
+else
+  printf "${O}  +----------------------------------------------+${X}\n"
+  printf "${O}  |${X}   ${O}>>${X}  ${B}C L I P   F A C T O R Y${X}               ${O}|${X}\n"
+  printf "${O}  |${X}       ${D}installer -- from zero to first clip${X}   ${O}|${X}\n"
+  printf "${O}  +----------------------------------------------+${X}\n"
+fi
 
 step "System packages (ffmpeg, python3)"
 NEED=()
 have ffmpeg  || NEED+=(ffmpeg)
 have python3 || NEED+=(python3)
 if [ ${#NEED[@]} -eq 0 ]; then
-  ok "ffmpeg $(ffmpeg -version 2>/dev/null | head -1 | awk '{print $3}') · python $(python3 -V 2>&1 | awk '{print $2}') already installed"
+  ok "ffmpeg $(ffmpeg -version 2>/dev/null | head -1 | awk '{print $3}') · python $(python3 -V 2>&1 | awk '{print $2}') already installed"; note_skip "system packages (already present)"
 else
   SUDO=""; [ "$(id -u)" -ne 0 ] && SUDO="sudo"
   if have dnf; then
@@ -91,15 +106,26 @@ spin "upgrade pip" "$PIP" install -q --upgrade pip || true
 step "Optional extras"
 if .venv/bin/python -c 'import faster_whisper' 2>/dev/null; then skip "faster-whisper installed"
 elif ask "install faster-whisper? (word-synced captions + transcripts, ~250 MB)"; then
-  spin "pip install faster-whisper" "$PIP" install -q faster-whisper || true
-else skip "skipped faster-whisper — ./clip produce renders without captions"; fi
+  spin "pip install faster-whisper" "$PIP" install -q faster-whisper && note_done "faster-whisper (captions/transcripts)" || true
+else skip "skipped faster-whisper — ./clip produce renders without captions"; note_skip "faster-whisper"; fi
 if .venv/bin/python -c 'import PIL' 2>/dev/null; then skip "pillow installed"
 elif ask "install pillow? (cover image generator, small)"; then
-  spin "pip install pillow" "$PIP" install -q pillow || true
-else skip "skipped pillow — ./clip cover won't run"; fi
+  spin "pip install pillow" "$PIP" install -q pillow && note_done "pillow (cover generator)" || true
+else skip "skipped pillow — ./clip cover won't run"; note_skip "pillow"; fi
 
 step "Health check"
 chmod +x clip
 ./clip doctor
 
-printf "${B}Done.${X} Drop videos in ${B}inbox/${X} then run ${B}./clip${X} — or hand the folder to your AI agent.\n"
+hl(){ if [ "$UTF8" = 1 ]; then printf '─%.0s' $(seq 1 46); else printf -- '-%.0s' $(seq 1 46); fi; }
+if [ "$UTF8" = 1 ]; then TL="╭"; TR="╮"; BL="╰"; BR="╯"; V="│"; else TL="+"; TR="+"; BL="+"; BR="+"; V="|"; fi
+printf "\n${O}%s%s%s${X}\n" "$TL" "$(hl)" "$TR"
+printf "${O}%s${X} ${B}%-44s${X} ${O}%s${X}\n" "$V" "Install summary" "$V"
+for d in "${DONE_LIST[@]:-}"; do [ -n "$d" ] && printf "${O}%s${X}  ${G}✓${X} %-41s ${O}%s${X}\n" "$V" "$d" "$V"; done
+for s in "${SKIP_LIST[@]:-}"; do [ -n "$s" ] && printf "${O}%s${X}  ${D}·${X} ${D}%-41s${X} ${O}%s${X}\n" "$V" "$s" "$V"; done
+printf "${O}%s${X} %-44s ${O}%s${X}\n" "$V" "" "$V"
+printf "${O}%s${X} ${B}%-44s${X} ${O}%s${X}\n" "$V" "Next steps" "$V"
+printf "${O}%s${X}   %-42s ${O}%s${X}\n" "$V" "./clip demo   safe end-to-end tour" "$V"
+printf "${O}%s${X}   %-42s ${O}%s${X}\n" "$V" "./clip ui     open the web dashboard" "$V"
+printf "${O}%s${X}   %-42s ${O}%s${X}\n" "$V" "./clip        the terminal menu" "$V"
+printf "${O}%s%s%s${X}\n" "$BL" "$(hl)" "$BR"

@@ -14,8 +14,11 @@ different AI; continuity lives in files on disk, not in this conversation.
 2. **Check the mode:** run `./clip mode` (or read `MODE` in `.env`).
    - `offline` → make clips, content sheets, and covers only. **Never post.**
    - `online` → also publish via the configured backend.
-3. **Ingest the inbox:** run `./clip ingest`. It probes any new videos, writes notes, and
-   records them in a manifest so nothing is processed twice. Nothing new = nothing to do here.
+3. **Ingest + sort the inbox:** run `./clip ingest`, then `./clip sort auto` (propose,
+   confirm, move). It names campaigns from filenames/transcripts, files each video under
+   `work/<campaign>/`, writes CAMPAIGN-NOTES.md, and creates the brief. Then
+   `./clip hashtags <campaign> --ask` records required hashtags and suggests up to 4 total.
+   (The web UI — `./clip ui` — does ingest+sort automatically on every drop.)
 4. Read the **Next actions** in STATE.md and continue from there. Tell the user, in one
    line, what you're about to do — then do it.
 
@@ -78,6 +81,9 @@ different AI; continuity lives in files on disk, not in this conversation.
 ## Quick command reference
 ```
 ./clip ingest                      inventory new inbox videos
+./clip sort auto                   auto-name campaigns + file videos into them
+./clip hashtags <camp> --ask       record + suggest hashtags (4 max)
+./clip ui                          web dashboard (drag & drop, produce, captions)
 ./clip mode | offline | online     show/switch mode
 ./clip select <video> --transcribe rank clip moments
 ./clip cut <video> <in> <out> <o>  cut one clip

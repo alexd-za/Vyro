@@ -7,10 +7,13 @@ set -uo pipefail
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$DIR"
 
-# ---- colour (only on a real terminal) ----
-if [ -t 1 ]; then
-  G=$'\e[32m'; R=$'\e[31m'; Y=$'\e[33m'; C=$'\e[36m'; B=$'\e[1m'; D=$'\e[2m'; X=$'\e[0m'
+# ---- colour: only on a real terminal, honouring the NO_COLOR standard.
+# Palette is light/dark safe: orange 209 accent + bold default-fg; never
+# yellow-on-default or dim-only for text that matters.
+if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
+  G=$'\e[32m'; R=$'\e[31m'; Y=$'\e[38;5;209m'; C=$'\e[36m'; B=$'\e[1m'; D=$'\e[38;5;245m'; X=$'\e[0m'
 else G=; R=; Y=; C=; B=; D=; X=; fi
+UTF8=1; case "${LC_ALL:-${LANG:-}}" in *[Uu][Tt][Ff]*8*) ;; *) UTF8=0 ;; esac
 
 ok(){  printf "  [${G}ok${X}] %s\n" "$1"; }
 bad(){ printf "  [${R}!!${X}] %s\n" "$1"; [ -n "${2:-}" ] && printf "         ${D}→ %s${X}\n" "$2"; FAILS=$((FAILS+1)); }
@@ -51,20 +54,17 @@ backend_summary(){
 }
 
 banner(){
-  local lines=(
-'    ___ _    ___ ___   ___ _   ___ _____ ___  _____   __'
-'   / __| |  |_ _| _ \ | __/_\ / __|_   _/ _ \| _ \ \ / /'
-'  | (__| |__ | ||  _/ | _/ _ \ (__  | || (_) |   /\ V /'
-'   \___|____|___|_|   |_/_/ \_\___| |_| \___/|_|_\ |_|'
-  )
-  local grad=(203 209 214 220) i=0 line
-  for line in "${lines[@]}"; do
-    if [ -t 1 ]; then
-      printf '\e[38;5;%sm%s\e[0m\n' "${grad[i]}" "$line"; sleep 0.02
-    else printf '%s\n' "$line"; fi
-    i=$((i+1))
-  done
-  printf "  ${D}approved footage ${X}${Y}→${X}${D} clips that earn  ·  v2.0${X}\n"
+  if [ "$UTF8" = 1 ]; then
+    printf "${Y}  ╭──────────────────────────────────────────────╮${X}\n"
+    printf "${Y}  │${X}   ${Y}▶▶${X}  ${B}C L I P   F A C T O R Y${X}               ${Y}│${X}\n"
+    printf "${Y}  │${X}       ${D}approved footage → clips that earn${X}     ${Y}│${X}\n"
+    printf "${Y}  ╰──────────────────────────────────────── v2.1 ─╯${X}\n"
+  else
+    printf "${Y}  +----------------------------------------------+${X}\n"
+    printf "${Y}  |${X}   ${Y}>>${X}  ${B}C L I P   F A C T O R Y${X}               ${Y}|${X}\n"
+    printf "${Y}  |${X}       ${D}approved footage -> clips that earn${X}    ${Y}|${X}\n"
+    printf "${Y}  +---------------------------------------- v2.1 -+${X}\n"
+  fi
 }
 
 # run a slow step behind a spinner (plain passthrough when piped)
@@ -107,6 +107,8 @@ c_doctor(){
   [ -f tools/memory.py ] && ok "memory tool (./clip mem)" || bad "tools/memory.py missing"
   [ -f tools/content.py ] && ok "content tool" || bad "tools/content.py missing"
   [ -f tools/fx.py ] && ok "fx tool (fonts)"   || bad "tools/fx.py missing"
+  [ -f tools/sort.py ] && ok "sort tool (auto-organize)" || bad "tools/sort.py missing"
+  [ -f tools/webui.py ] && ok "web dashboard (./clip ui)" || bad "tools/webui.py missing"
   [ -f tests/smoke.sh ] && ok "smoke test (bash tests/smoke.sh)" || opt "tests/smoke.sh missing"
   { [ -f AGENT-PLAYBOOK.md ] && [ -f STATE.md ]; } && ok "agent playbook + STATE" || bad "AGENT-PLAYBOOK.md / STATE.md missing"
   if [ -f AGENTS.md ] && [ -f CLAUDE.md ]; then ok "dual-agent config (AGENTS.md + CLAUDE.md)"; else bad "AGENTS.md / CLAUDE.md missing" "./clip setup"; fi
@@ -196,6 +198,8 @@ c_select(){
 c_publish(){ "$PY" skills/publish/publish.py "$@"; }
 c_mem(){     "$PY" tools/memory.py "$@"; }
 c_fx(){      "$PY" tools/fx.py "$@"; }
+c_sort(){    [ $# -eq 0 ] && set -- auto; "$PY" tools/sort.py "$@"; }
+c_ui(){      "$PY" tools/webui.py "$@"; }
 c_content(){
   if [ $# -lt 1 ]; then
     echo 'usage: ./clip content <clip.mp4> --brief briefs/x.json --hook "what the clip shows"'
@@ -373,6 +377,9 @@ ${B}Usage:${X}  ./clip [command]     (no command = interactive menu)
   ${B}setup${X}                 first-run: folders, venv, .env, agent config, doctor
   ${B}doctor${X}                check the environment and how to fix anything missing
   ${B}ingest${X}                inventory new videos dropped in inbox/
+  ${B}sort${X} [auto|--yes]     auto-name campaigns + file dropped videos into them
+  ${B}hashtags${X} <camp> --ask suggest hashtags (4 max) and save to the brief
+  ${B}ui${X} [--port N]         open the local web dashboard (drag & drop videos)
   ${B}new-campaign${X} <name>   make work/ + out/ folders and a brief template
   ${B}select${X} <video> [..]   rank clip moments (--count --target --transcribe)
   ${B}cut${X} <vid> <in> <out>  cut one clip between two timestamps
@@ -490,6 +497,9 @@ case "${1:-menu}" in
   cover)             shift; c_cover "$@" ;;
   publish)           shift; c_publish "$@" ;;
   mem|memory)        shift; c_mem "$@" ;;
+  sort)              shift; c_sort "$@" ;;
+  hashtags)          shift; c_sort hashtags "$@" ;;
+  ui|web)            shift; c_ui "$@" ;;
   fx)                shift; c_fx "$@" ;;
   content)           shift; c_content "$@" ;;
   handoff)           c_handoff ;;
