@@ -1,0 +1,30 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(./clip doctor)",
+      "Bash(./clip ingest)",
+      "Bash(./clip select:*)",
+      "Bash(./clip cut:*)",
+      "Bash(./clip produce:*)",
+      "Bash(./clip sheet:*)",
+      "Bash(./clip cover:*)",
+      "Bash(./clip state)",
+      "Bash(./clip dashboard)",
+      "Bash(./clip mem:*)",
+      "Bash(./clip handoff)",
+      "Bash(ffprobe:*)"
+    ]
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "./clip mem recall --hook 2>/dev/null || true"
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -310,9 +310,10 @@ def render_md(path, duration, cands):
             out.append("- " + "; ".join(c["reasons"]))
         if c.get("text"):
             out.append(f"- transcript: {c['text']}")
+        # re-encode on purpose: -c copy snaps to keyframes and lands seconds off
         out.append(f"- cut command: "
-                   f"`ffmpeg -ss {c['start']} -to {c['end']} -i \"{Path(path).name}\" "
-                   f"-c copy clip_{c['rank']:02d}.mp4`\n")
+                   f"`./clip cut \"{path}\" {c['start']} {c['end']} "
+                   f"clip_{c['rank']:02d}.mp4`\n")
     out.append("> First pass only. Check each against the campaign brief and your own taste "
                "before cutting — pick the strongest 8–15, not all of them.")
     return "\n".join(out)

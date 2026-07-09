@@ -11,9 +11,8 @@ A foundation for running **Claude Code + Codex as one shared system** on your Fe
 
 ## Start here
 ```bash
-chmod +x clip
-./clip setup     # folders, python venv, .env, agent config, then a health check
-./clip           # opens the menu — or use ./clip doctor, new-campaign, select, publish
+./install.sh     # one command: system deps + venv + extras + health check
+./clip           # opens the menu — or use ./clip doctor, select, cut, produce, publish
 ```
 Then (optional) open this folder in Claude Code or Codex and paste `INSTALL-PROMPT.md`
 to pull in the extra skills/tools. **Full walkthrough: `GETTING-STARTED.md`.**
@@ -21,8 +20,10 @@ to pull in the extra skills/tools. **Full walkthrough: `GETTING-STARTED.md`.**
 ## How the dual-agent setup works
 - One source of truth (`AGENTS.md`), so the two CLIs never drift.
 - Portable `SKILL.md` skills live in `./skills` and work in both tools (in Codex you call them with `/skill-name`).
-- A markdown knowledge base (`./knowledge`) is the memory: `ledger.md` tracks shipped clips + views, `learnings.md`
-  records why clips won or lost. That's the "self-improving" loop — it compounds because every result is written down.
+- A git-native **shared memory** (`./clip mem`) every AI reads and writes: auto-recall at
+  session start (Claude Code hook), `add`/`search` for learnings and decisions, auto-logged
+  pipeline events, plus `./clip handoff` to swap AIs mid-batch. `knowledge/ledger.md`
+  (shipped clips + views) and `learnings.md` complete the self-improving loop.
 - Run out of quota on one tool → switch to the other. Same brain, no re-explaining.
 
 ## Why a few things were left out on purpose

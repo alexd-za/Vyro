@@ -51,15 +51,44 @@ backend_summary(){
 }
 
 banner(){
-  printf "%s" "$C"
-  cat <<'ART'
-    ___ _    ___ ___   ___ _   ___ _____ ___  _____   __
-   / __| |  |_ _| _ \ | __/_\ / __|_   _/ _ \| _ \ \ / /
-  | (__| |__ | ||  _/ | _/ _ \ (__  | || (_) |   /\ V /
-   \___|____|___|_|   |_/_/ \_\___| |_| \___/|_|_\ |_|
-ART
-  printf "%s" "$X"
-  printf "  ${D}approved footage  →  clips that earn  ·  v1.1${X}\n"
+  local lines=(
+'    ___ _    ___ ___   ___ _   ___ _____ ___  _____   __'
+'   / __| |  |_ _| _ \ | __/_\ / __|_   _/ _ \| _ \ \ / /'
+'  | (__| |__ | ||  _/ | _/ _ \ (__  | || (_) |   /\ V /'
+'   \___|____|___|_|   |_/_/ \_\___| |_| \___/|_|_\ |_|'
+  )
+  local grad=(203 209 214 220) i=0 line
+  for line in "${lines[@]}"; do
+    if [ -t 1 ]; then
+      printf '\e[38;5;%sm%s\e[0m\n' "${grad[i]}" "$line"; sleep 0.02
+    else printf '%s\n' "$line"; fi
+    i=$((i+1))
+  done
+  printf "  ${D}approved footage ${X}${Y}→${X}${D} clips that earn  ·  v2.0${X}\n"
+}
+
+# run a slow step behind a spinner (plain passthrough when piped)
+run_spin(){  # run_spin "label" cmd [args...]
+  local label="$1"; shift
+  [ -t 1 ] || { "$@"; return $?; }
+  local tmp t0 pid rc i=0 frames='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
+  case "${LC_ALL:-${LANG:-}}" in *[Uu][Tt][Ff]*8*) ;; *) frames='|/-\|/-\|/' ;; esac
+  tmp="$(mktemp)"; t0=$SECONDS
+  "$@" >"$tmp" 2>&1 &
+  pid=$!; printf '\e[?25l'
+  while kill -0 "$pid" 2>/dev/null; do
+    printf '\r  \e[38;5;209m%s\e[0m %s \e[2m%ss\e[0m ' "${frames:i%10:1}" "$label" "$((SECONDS-t0))"
+    i=$((i+1)); sleep 0.08
+  done
+  wait "$pid"; rc=$?
+  printf '\r\e[?25h\e[K'
+  if [ $rc -eq 0 ]; then printf "  ${G}✓${X} %s ${D}(%ss)${X}\n" "$label" "$((SECONDS-t0))"
+  else printf "  ${R}✗${X} %s ${D}(%ss)${X}\n" "$label" "$((SECONDS-t0))"; fi
+  sed 's/^/    /' "$tmp"; rm -f "$tmp"; return $rc
+}
+
+pill(){  # pill "TEXT" bg-256  -> reverse-video badge ($G set = colors are on)
+  if [ -n "$G" ]; then printf '\e[48;5;%s;38;5;16;1m %s \e[0m' "$2" "$1"; else printf '[%s]' "$1"; fi
 }
 
 # ---------------- doctor ----------------
@@ -73,6 +102,7 @@ c_doctor(){
   [ -f skills/clip-select/find_moments.py ] && ok "clip-select skill" || bad "skills/clip-select/find_moments.py missing"
   [ -f skills/publish/publish.py ]          && ok "publish skill"     || bad "skills/publish/publish.py missing"
   [ -f tools/ingest.py ] && ok "ingest tool"  || bad "tools/ingest.py missing"
+  [ -f tools/produce.py ] && ok "produce tool (9:16 + captions + grade)" || bad "tools/produce.py missing"
   [ -f tools/make_cover.py ] && ok "cover tool" || bad "tools/make_cover.py missing"
   { [ -f AGENT-PLAYBOOK.md ] && [ -f STATE.md ]; } && ok "agent playbook + STATE" || bad "AGENT-PLAYBOOK.md / STATE.md missing"
   if [ -f AGENTS.md ] && [ -f CLAUDE.md ]; then ok "dual-agent config (AGENTS.md + CLAUDE.md)"; else bad "AGENTS.md / CLAUDE.md missing" "./clip setup"; fi
@@ -130,12 +160,17 @@ c_new_campaign(){
   "campaign": "$name",
   "caption_template": "WRITE A SCROLL-STOPPING FIRST LINE HERE",
   "required_hashtags": ["#fyp"],
+  "banned_phrases": [],
+  "min_seconds": 0,
+  "max_seconds": 0,
+  "brand_color": "#FF6A2C",
+  "highlight_words": [],
   "ai_generated": true,
   "is_branded": false,
   "disclosure": "",
   "video_url": "",
   "platforms": ["tiktok", "reels", "shorts"],
-  "notes": "Paste the campaign's rules: allowed source, length limits, required tags/disclosures."
+  "notes": "Paste the campaign's rules: allowed source, length limits, required tags/disclosures. banned_phrases = wording the brief forbids (e.g. health claims); min/max_seconds = length rules (0 = none); brand_color + highlight_words drive caption keyword highlighting in ./clip produce."
 }
 EOF
     echo "Created $brief — fill in the campaign's rules."
@@ -146,13 +181,56 @@ EOF
 # ---------------- wrappers to the python tools ----------------
 c_select(){
   [ $# -eq 0 ] && { read -rp "Path to source video: " v; [ -z "${v:-}" ] && return 1; set -- "$v"; }
-  "$PY" skills/clip-select/find_moments.py "$@"
+  run_spin "scanning for moments" "$PY" skills/clip-select/find_moments.py "$@"
 }
 c_publish(){ "$PY" skills/publish/publish.py "$@"; }
-c_ingest(){  "$PY" tools/ingest.py; }
+c_mem(){     "$PY" tools/memory.py "$@"; }
+c_fx(){      "$PY" tools/fx.py "$@"; }
+c_content(){
+  if [ $# -lt 1 ]; then
+    echo 'usage: ./clip content <clip.mp4> --brief briefs/x.json --hook "what the clip shows"'
+    return 1
+  fi
+  "$PY" tools/content.py "$@" && mem_log "content sheet for $1" "stage=content"
+}
+mem_log(){   "$PY" tools/memory.py log "$1" ${2:+--tags "$2"} 2>/dev/null || true; }
+c_ingest(){  run_spin "ingesting inbox" "$PY" tools/ingest.py && mem_log "ingested inbox"; }
+
+c_handoff(){  # snapshot everything the NEXT AI needs into HANDOFF.md
+  {
+    echo "# HANDOFF — read this first, then AGENT-PLAYBOOK.md"
+    echo "_written $(date -Iseconds) by ./clip handoff_"
+    echo
+    "$PY" tools/memory.py recall
+    echo
+    echo "## repo state"
+    git log --oneline -3 2>/dev/null | sed 's/^/- /'
+    git status --short 2>/dev/null | sed 's/^/- /'
+  } > HANDOFF.md
+  mem_log "wrote HANDOFF.md for agent handoff"
+  echo "wrote HANDOFF.md — point the other AI at it (it contains memory recall + repo state)."
+}
 c_cover(){
   if [ $# -lt 2 ]; then echo 'usage: ./clip cover <clip.mp4> "HOOK TEXT" [--pos top|center|bottom]'; return 1; fi
   "$PY" tools/make_cover.py "$@"
+}
+c_produce(){
+  if [ $# -lt 1 ]; then
+    echo 'usage: ./clip produce <cut.mp4> [--brief briefs/x.json] [--hook "TITLE"]'
+    echo '       [--reframe crop|blur] [--grade vibrant|moody|none] [--no-captions] [--out f.mp4]'
+    return 1
+  fi
+  "$PY" tools/produce.py "$@" && mem_log "produced $1" "stage=produce"
+}
+c_sheet(){  # contact sheet: verify the footage matches the hook BEFORE shipping
+  local src="${1:-}"; [ -z "$src" ] && { echo "usage: ./clip sheet <video> [out.png]"; return 1; }
+  [ -f "$src" ] || { echo "not found: $src"; return 1; }
+  local out="${2:-${src%.*}_sheet.png}"
+  local dur; dur="$(ffprobe -v error -show_entries format=duration -of default=nw=1:nk=1 "$src")"
+  local fps; fps="$(awk -v d="$dur" 'BEGIN{printf "%.4f", 9/(d>0?d:1)}')"
+  ffmpeg -y -hide_banner -loglevel error -i "$src" \
+    -vf "fps=$fps,scale=320:-2,tile=3x3:margin=4:padding=4" -frames:v 1 "$out" \
+    && echo "wrote $out — check every panel supports the hook before publishing."
 }
 
 # ---------------- cut a clip ----------------
@@ -167,7 +245,7 @@ c_cut(){
   local vargs="-c:v libx264 -preset veryfast -crf 20"; [ "$enc" = mpeg4 ] && vargs="-c:v mpeg4 -q:v 4"
   echo "cutting $src  $start → $end  (encoder: $enc)…"
   if ffmpeg -y -hide_banner -loglevel error -i "$src" -ss "$start" -to "$end" $vargs -c:a aac -movflags +faststart "$out"; then
-    echo "wrote $out"
+    echo "wrote $out"; mem_log "cut $src $start-$end -> $out" "stage=cut"
   else echo "cut failed — check the timestamps."; return 1; fi
 }
 
@@ -183,14 +261,14 @@ c_state(){
 c_dashboard(){
   hdr "Dashboard"
   printf "  mode: ${B}%s${X}\n" "$(mode_label)"
-  local camps n; camps="$(ls -1 work 2>/dev/null | grep -v '^_')"; n="$(printf '%s\n' "$camps" | grep -c . 2>/dev/null || echo 0)"
+  local camps n; camps="$(ls -1 work 2>/dev/null | grep -v '^_')"; n="$(printf '%s\n' "$camps" | grep -c .)"
   printf "  campaigns (%s): %s\n" "${n:-0}" "$(printf '%s ' $camps)"
   if [ -f knowledge/inbox-manifest.json ]; then
     local ing; ing="$(grep -c '"name"' knowledge/inbox-manifest.json 2>/dev/null || echo 0)"
     printf "  videos ingested: %s\n" "$ing"
   fi
   if [ -f knowledge/ledger.md ]; then
-    local posts; posts="$(grep -cE '^\| 20[0-9][0-9]-' knowledge/ledger.md 2>/dev/null || echo 0)"
+    local posts; posts="$(grep -cE '^\| 20[0-9][0-9]-' knowledge/ledger.md 2>/dev/null)"
     printf "  posts logged: %s\n" "$posts"
     if [ "${posts:-0}" -gt 0 ]; then
       echo; echo "  recent posts:"; grep -E '^\| 20[0-9][0-9]-' knowledge/ledger.md | tail -5 | sed 's/^/    /'
@@ -239,21 +317,28 @@ Drop videos in ${B}inbox/${X}; state lives in ${B}STATE.md${X} so any session/AI
 
 ${B}Usage:${X}  ./clip [command]     (no command = interactive menu)
 
+  ${B}install${X} [--yes]       install system deps (ffmpeg, python, extras) + setup
   ${B}setup${X}                 first-run: folders, venv, .env, agent config, doctor
   ${B}doctor${X}                check the environment and how to fix anything missing
   ${B}ingest${X}                inventory new videos dropped in inbox/
   ${B}new-campaign${X} <name>   make work/ + out/ folders and a brief template
   ${B}select${X} <video> [..]   rank clip moments (--count --target --transcribe)
   ${B}cut${X} <vid> <in> <out>  cut one clip between two timestamps
+  ${B}produce${X} <cut> [..]    finish a cut: 9:16 + captions + grade (--hook --brief)
+  ${B}sheet${X} <video>         contact sheet — verify footage matches the hook
   ${B}cover${X} <clip> "HOOK"   generate a cover image (frame + hook text)
+  ${B}content${X} <clip> [..]   draft title/captions/pinned comment from the brief
+  ${B}fx${X} fonts              fetch open-licensed display fonts (better hooks)
   ${B}publish${X} <args>        prepare/publish a clip (dry-run unless --send)
+  ${B}mem${X} <cmd>              shared AI memory: add / search / recall / digest
+  ${B}handoff${X}               write HANDOFF.md so another AI resumes instantly
   ${B}mode${X} | offline | online   show/switch mode (offline = clips only)
   ${B}state${X}                 show STATE.md
   ${B}dashboard${X}             campaigns + posts logged
   ${B}config${X}                which publish backends are configured
   ${B}help${X}                  this message
 
-${B}Pipeline:${X}  inbox → ingest → categorize → select → cut → content sheet + cover → (post if online)
+${B}Pipeline:${X}  inbox → ingest → categorize → select → cut → produce → sheet (QA) → content sheet + cover → (post if online)
 ${D}Full walkthrough: GETTING-STARTED.md · Agent loop: AGENT-PLAYBOOK.md${X}
 EOF
 }
@@ -262,6 +347,9 @@ EOF
 i_select(){  read -rp "  source video: " v; [ -n "${v:-}" ] && c_select "$v"; }
 i_cut(){     read -rp "  source: " s; read -rp "  start (mm:ss or sec): " a; read -rp "  end: " b; c_cut "${s:-}" "${a:-}" "${b:-}"; }
 i_cover(){   read -rp "  clip (out/.../clip.mp4): " c; read -rp "  hook text: " hk; [ -n "${c:-}" ] && [ -n "${hk:-}" ] && c_cover "$c" "$hk"; }
+i_produce(){ read -rp "  cut file: " c; read -rp "  hook title (optional): " hk; read -rp "  brief json (optional): " b
+             [ -n "${c:-}" ] && c_produce "$c" ${hk:+--hook "$hk"} ${b:+--brief "$b"}; }
+i_sheet(){   read -rp "  video: " v; [ -n "${v:-}" ] && c_sheet "$v"; }
 i_prepare(){ read -rp "  cut file (out/.../clip.mp4): " c; read -rp "  brief json (briefs/x.json): " b; c_publish prepare --clip "${c:-}" ${b:+--brief "$b"}; }
 i_publish(){
   read -rp "  package json [post_package.json]: " p; p="${p:-post_package.json}"
@@ -272,33 +360,32 @@ i_publish(){
 }
 
 # ---------------- menu ----------------
+sect(){ printf "  ${D}─── ${X}${B}%s${X} ${D}%s${X}\n" "$1" "$(printf '─%.0s' $(seq 1 $((40-${#1}))))"; }
+item(){ printf "   ${Y}${B}%s${X}  %-24s" "$1" "$2"; [ -n "${3:-}" ] && printf "${Y}${B}%s${X}  %-22s" "$3" "$4"; printf "\n"; }
+
 menu_screen(){
   clear 2>/dev/null || true
   banner
-  local BK MD; BK="$(backend_summary)"
-  if is_online; then MD="${G}online${X} ${D}(clips + posts via $(auto_backend))${X}"; else MD="${C}offline${X} ${D}(just makes clips)${X}"; fi
-  cat <<EOF
-
-  ${D}mode:${X} ${MD}
-  ${D}backends:${X}  ${BK}
-
-  ${B}━━ AGENT / INBOX ━━━━━━━━━━━━━━━━━━━━━━━━━━━${X}
-   ${B}i${X}  Ingest inbox (process dropped videos)
-   ${B}s${X}  Show STATE
-
-  ${B}━━ CREATE ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${X}
-   ${B}3${X}  New campaign        ${B}4${X}  Find clips        ${B}5${X}  Cut a clip
-   ${B}6${X}  Generate a cover
-
-  ${B}━━ PUBLISH ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${X}
-   ${B}7${X}  Prepare a post      ${B}8${X}  Publish / queue   ${D}(dry-run unless confirmed)${X}
-
-  ${B}━━ TRACK / SETUP ━━━━━━━━━━━━━━━━━━━━━━━━━━━━${X}
-   ${B}9${X}  Dashboard   ${B}1${X}  Setup   ${B}2${X}  Doctor
-
-  ${B}━━ CONFIG ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${X}
-   ${B}m${X}  Toggle mode (offline ⇄ online)   ${B}c${X}  Settings   ${B}h${X}  Help   ${B}q${X}  Quit
-EOF
+  local MD
+  if is_online; then MD="$(pill ONLINE 34) ${D}clips + posts via $(auto_backend)${X}"
+  else MD="$(pill OFFLINE 208) ${D}just makes clips — no posting${X}"; fi
+  printf "\n  %b\n" "$MD"
+  printf "  ${D}backends${X}  %b\n\n" "$(backend_summary)"
+  sect "agent / inbox"
+  item i "Ingest inbox"           s "Show state"
+  sect "create"
+  item 3 "New campaign"           4 "Find clips"
+  item 5 "Cut a clip"             p "Produce (9:16+captions)"
+  item v "Verify (contact sheet)" 6 "Generate a cover"
+  sect "publish"
+  item 7 "Prepare a post"         8 "Publish / queue"
+  sect "memory / handoff"
+  item r "Recall memory"          o "Handoff to other AI"
+  sect "track / config"
+  item 9 "Dashboard"              2 "Doctor"
+  item 1 "Setup"                  c "Settings"
+  item m "Toggle offline/online"  h "Help"
+  printf "   ${Y}${B}q${X}  Quit\n"
 }
 
 menu(){
@@ -313,11 +400,15 @@ menu(){
       3) c_new_campaign ;;
       4) i_select ;;
       5) i_cut ;;
+      p|P) i_produce ;;
+      v|V) i_sheet ;;
       6) i_cover ;;
       7) i_prepare ;;
       8) if is_online; then i_publish
          else printf "  ${Y}offline mode is on.${X} Clips are in ${B}out/<campaign>/${X}; switch with ${B}m${X} (or ${B}./clip online${X}) to post.\n"; fi ;;
       9) c_dashboard ;;
+      r|R) c_mem recall ;;
+      o|O) c_handoff ;;
       m|M) c_mode ;;
       c|C) c_config ;;
       h|H|help|\?) c_help ;;
@@ -332,14 +423,21 @@ menu(){
 # ---------------- dispatch ----------------
 case "${1:-menu}" in
   menu)              menu ;;
+  install)           shift; bash install.sh "$@" ;;
   setup)             c_setup ;;
   doctor)            c_doctor ;;
   ingest)            c_ingest ;;
   new-campaign|nc)   shift; c_new_campaign "$@" ;;
   select|clips)      shift; c_select "$@" ;;
   cut)               shift; c_cut "$@" ;;
+  produce)           shift; c_produce "$@" ;;
+  sheet)             shift; c_sheet "$@" ;;
   cover)             shift; c_cover "$@" ;;
   publish)           shift; c_publish "$@" ;;
+  mem|memory)        shift; c_mem "$@" ;;
+  fx)                shift; c_fx "$@" ;;
+  content)           shift; c_content "$@" ;;
+  handoff)           c_handoff ;;
   mode)              shift; c_mode "$@" ;;
   offline)           c_mode offline ;;
   online)            c_mode online ;;

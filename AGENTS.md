@@ -16,19 +16,30 @@ Goal: many high-quality clips, fast, that earn views. Vyro pays roughly $3 per 1
 - **Never post fully autonomously** to a social account. Prepare and schedule; a human reviews and confirms each batch before it goes live. Unattended bot posting gets accounts banned, which kills the income.
 - Keep everything reproducible: every clip = inputs + a command we can re-run.
 
-## Both agents read this file
-This is the single source of truth for **both Claude Code and Codex**.
-- Codex reads `AGENTS.md` automatically.
+## Every agent reads this file
+This is the single source of truth for **Claude Code, Codex, Gemini CLI, and any future AI**.
+- Codex (and other AGENTS.md-aware tools, e.g. Cursor) read `AGENTS.md` automatically.
 - Claude Code reads `CLAUDE.md`, which imports this file (`@AGENTS.md`) and adds Claude-only notes below the import.
+- Gemini CLI reads `GEMINI.md`, a thin pointer to this file.
 When one runs out of quota, switch to the other — same instructions, same skills, same memory. Do not re-explain the project.
+
+## Shared memory (one brain across every AI and chat)
+`./clip mem` is the memory every agent shares — plain files in `knowledge/memory/`,
+committed to git, so it follows the repo across chats, models, and machines.
+- Session start: `./clip mem recall` (Claude Code does this automatically via hook).
+- Learned something? `./clip mem add "..." --type learning|decision`.
+- Switching AI or stopping? `./clip handoff` → HANDOFF.md for the next agent.
+- Details: `skills/memory/SKILL.md`. STATE.md stays the *current* status; memory is history + knowledge.
 
 ## The pipeline (stages)
 1. **Research** — find what's hooking on the campaign's topic right now. (skill: `trend-research`)
 2. **Select** — pick the 8–15 strongest moments from a source video. (skill: `clip-select`)
-3. **Cut & reframe** — vertical 9:16, trim to the moment, punch-in on faces. (ffmpeg / OpenCut)
-4. **Caption** — burn-in animated captions + a strong first-frame hook. (skill: `caption-burn`)
+3. **Cut** — trim to the moment. (`./clip cut`)
+4. **Produce** — vertical 9:16 reframe, punch-in, color grade, word-synced animated
+   captions with brand-keyword highlights, hook title, loudness. (`./clip produce`)
 5. **Polish** — optional motion graphics / overlays. (Lottie / GSAP / motion skills)
-6. **QA** — quality gate before anything ships. (skill: `quality-gate`)
+6. **QA** — `./clip sheet` contact sheet: confirm the footage shows what the hook
+   claims (never ship a mislabeled clip), and length fits the brief.
 7. **Package** — name, first-frame, per-platform export, caption text + hashtags pulled from the brief.
 8. **Schedule** — queue to a human-reviewed posting tool; log the live URL back for Vyro submission.
 
