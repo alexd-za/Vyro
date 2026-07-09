@@ -28,7 +28,15 @@ from pathlib import Path
 
 FONTS_DIRS = ["/usr/share/fonts/truetype/dejavu", "/usr/share/fonts/dejavu-sans-fonts",
               "/usr/share/fonts/dejavu"]
+ASSET_FONTS = Path(__file__).resolve().parents[1] / "assets" / "fonts"
 W, H = 1080, 1920
+
+
+def hook_font():
+    """Prefer downloaded display fonts (./clip fx fonts) for hook titles."""
+    if (ASSET_FONTS / "Anton-Regular.ttf").exists():
+        return "Anton", str(ASSET_FONTS)
+    return "DejaVu Sans", None
 
 
 def run(cmd, **kw):
@@ -82,6 +90,8 @@ def ass_time(s):
 
 def build_ass(words, hook, highlight, brand_ass, out_path):
     """Pop-in caption chunks (<=3 words) + optional hook title. Returns event count."""
+    hfont, _ = hook_font()
+    hsize = 76 if hfont == "Anton" else 60
     header = (
         "[Script Info]\nScriptType: v4.00+\nPlayResX: 1080\nPlayResY: 1920\n"
         "WrapStyle: 2\nScaledBorderAndShadow: yes\n\n[V4+ Styles]\n"
@@ -91,7 +101,7 @@ def build_ass(words, hook, highlight, brand_ass, out_path):
         "MarginL, MarginR, MarginV, Encoding\n"
         "Style: Cap,DejaVu Sans,60,&H00FFFFFF,&H00FFFFFF,&H00101010,&H64000000,"
         "-1,0,0,0,100,100,0,0,1,5,3,5,40,40,40,1\n"
-        "Style: Hook,DejaVu Sans,60,&H00FFFFFF,&H00FFFFFF,&H00101010,&H64000000,"
+        f"Style: Hook,{hfont},{hsize},&H00FFFFFF,&H00FFFFFF,&H00101010,&H64000000,"
         "-1,0,0,0,100,100,0,0,1,6,3,5,60,60,60,1\n\n"
         "[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, "
         "MarginV, Effect, Text\n")
@@ -132,7 +142,7 @@ GRADES = {
 }
 
 
-def video_filter(reframe, grade, ass_path, fontsdir):
+def video_filter(reframe, grade, ass_path, fontsdir, bar_hex=None, dur=0):
     fill = f"scale={W}:{H}:force_original_aspect_ratio=increase,crop={W}:{H}"
     if reframe == "blur":
         chain = (f"[0:v]split=2[bg][fg];[bg]{fill},boxblur=22:4,"
@@ -145,6 +155,9 @@ def video_filter(reframe, grade, ass_path, fontsdir):
     if GRADES.get(grade):
         chain += "," + GRADES[grade]
     chain += ",fade=t=in:st=0:d=0.5"
+    if bar_hex and dur > 0:  # brand-colored retention bar sweeping the bottom edge
+        chain += (f"[vm];color=c=0x{bar_hex}@0.9:s={W}x14:r=30[bar];"
+                  f"[vm][bar]overlay=x='-{W}+{W}*t/{dur:.3f}':y={H - 14}:shortest=1")
     if ass_path:
         chain += f",subtitles={ass_path}"
         if fontsdir:
@@ -160,6 +173,8 @@ def main():
     ap.add_argument("--reframe", choices=["crop", "blur"], default="crop")
     ap.add_argument("--grade", choices=sorted(GRADES), default="vibrant")
     ap.add_argument("--no-captions", action="store_true")
+    ap.add_argument("--no-bar", action="store_true",
+                    help="disable the brand-colored progress bar")
     ap.add_argument("--out")
     args = ap.parse_args()
 
@@ -185,8 +200,13 @@ def main():
             ass_path = tmp.name
             print(f"captions: {n} events", file=sys.stderr)
 
-    fontsdir = next((d for d in FONTS_DIRS if Path(d).is_dir()), None)
-    vf = video_filter(args.reframe, args.grade, ass_path, fontsdir)
+    _, asset_dir = hook_font()
+    fontsdir = asset_dir or next((d for d in FONTS_DIRS if Path(d).is_dir()), None)
+    brand_hex = brief.get("brand_color", "#FF6A2C").lstrip("#")
+    if not re.fullmatch(r"[0-9a-fA-F]{6}", brand_hex):
+        brand_hex = "FF6A2C"
+    vf = video_filter(args.reframe, args.grade, ass_path, fontsdir,
+                      bar_hex=None if args.no_bar else brand_hex, dur=dur)
     cmd = ["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-i", str(src),
            "-filter_complex", vf, "-map", "[v]", "-map", "0:a?",
            "-af", f"afade=t=out:st={max(0.0, dur - 0.7):.2f}:d=0.6,"

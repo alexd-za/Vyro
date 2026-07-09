@@ -20,3 +20,9 @@ inbox/*
 !inbox/.gitkeep
 !inbox/README.txt
 knowledge/inbox-manifest.json
+
+# derived handoff snapshot (regenerate with ./clip handoff)
+HANDOFF.md
+
+# downloaded display fonts (regenerate with ./clip fx fonts)
+assets/fonts/

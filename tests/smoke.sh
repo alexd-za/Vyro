@@ -60,6 +60,30 @@ PY
 check "gate passes a clean package (dry-run)" \
   'python3 skills/publish/publish.py publish --package pkg.json 2>/dev/null | grep -q DRY-RUN'
 
+echo "== memory =="
+python3 tools/memory.py add "crop reframe beats blur for talking heads" --type learning --tags campaign=t >/dev/null
+python3 tools/memory.py log "smoke event" >/dev/null
+check "memory store written"        '[ -s knowledge/memory/events.jsonl ]'
+check "memory search finds it"      'python3 tools/memory.py search "reframe" | grep -q "crop reframe"'
+check "recall shows learning+event" 'python3 tools/memory.py recall | grep -q "crop reframe" && python3 tools/memory.py recall | grep -q "smoke event"'
+check "digest written"              '[ -f knowledge/MEMORY.md ]'
+check "hook recall is bounded"      '[ "$(python3 tools/memory.py recall --hook | wc -l)" -le 40 ]'
+
+echo "== content pack =="
+python3 tools/content.py out/final.mp4 --brief briefs/t.json --hook "the test lounge reveal" --out out/final.content.md >/dev/null
+check "content sheet has hashtags + pinned comment" \
+  'grep -q "#x" out/final.content.md && grep -q "Pinned author comment" out/final.content.md'
+check "content refuses banned phrases" \
+  '! python3 tools/content.py out/final.mp4 --brief briefs/t.json --hook "it works fast" >/dev/null 2>&1'
+
+echo "== progress bar render =="
+python3 tools/produce.py vonly.mp4 --no-captions --grade none --out out/bar.mp4 2>/dev/null
+check "bar render is 1080x1920"     'ffprobe -v error -show_entries stream=width,height -of csv=p=0 out/bar.mp4 | grep -q 1080,1920'
+
+echo "== handoff =="
+./clip handoff >/dev/null
+check "HANDOFF.md written"          'grep -q "memory recall" HANDOFF.md || grep -q "Clip Factory" HANDOFF.md'
+
 echo
 echo "passed $PASS, failed $FAIL"
 [ "$FAIL" -eq 0 ]

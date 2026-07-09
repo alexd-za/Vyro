@@ -6,6 +6,9 @@ place across sessions. The user may close the app, start a new chat, or switch t
 different AI; continuity lives in files on disk, not in this conversation.
 
 ## On every start (do this in order)
+0. **Load memory:** `./clip mem recall` — mode, campaigns, top learnings/decisions,
+   recent activity, next actions. (Claude Code runs this automatically via the
+   SessionStart hook in `.claude/settings.json`; other AIs run it by hand.)
 1. **Read `STATE.md`.** It is the source of truth for where things are. If it conflicts
    with what you think you remember, STATE.md wins.
 2. **Check the mode:** run `./clip mode` (or read `MODE` in `.env`).
@@ -37,8 +40,10 @@ different AI; continuity lives in files on disk, not in this conversation.
    claims, change the hook or drop the clip** — a mislabeled clip breaks the campaign's
    "don't misrepresent" rules and reads as clickbait. Also confirm length satisfies the
    brief's `min_seconds`/`max_seconds`.
-6. **Write a content sheet** per clip: copy `content-template.md` to
-   `out/<campaign>/clip_NN.content.md` and fill it in:
+6. **Write a content sheet** per clip. Draft it in one command, then polish:
+   `./clip content out/<campaign>/clip_NN_final.mp4 --brief briefs/<campaign>.json --hook "<the verified hook>"`
+   — that prefills title options, caption options, a pinned author comment, and the
+   required hashtags (all checked against banned_phrases). Then review and fill in:
    - **Hook** — the on-screen line for the first 1–2 seconds.
    - **3 caption options** — written in the campaign's voice.
    - **Hashtags** — pull the required ones from the brief.
@@ -65,6 +70,10 @@ different AI; continuity lives in files on disk, not in this conversation.
 - After a clip clearly over- or under-performs, write one line in `knowledge/learnings.md`
   about why. That file is how your picks get better over time.
 - Keep your messages short and tell the user what you did and what's next.
+- **Feed the memory:** `./clip mem add "..." --type learning|decision` whenever a rule
+  is discovered or a clip's result teaches something. Pipeline events are auto-logged.
+- **Before quota runs out or you stop:** run `./clip handoff` — it writes HANDOFF.md
+  (memory recall + repo state) so the next AI resumes in one read.
 
 ## Quick command reference
 ```
@@ -75,7 +84,11 @@ different AI; continuity lives in files on disk, not in this conversation.
 ./clip produce <cut> --brief <b>   finish it: 9:16 + captions + grade
 ./clip sheet <video>               contact sheet — hook vs footage QA
 ./clip cover <clip> "HOOK"         generate a cover image
+./clip content <clip> --brief <b> --hook "..."   draft title/captions/pinned comment
+./clip fx fonts                    fetch display fonts (hooks auto-upgrade)
 ./clip publish prepare|publish     build/publish a post (online mode)
+./clip mem recall|add|search       shared AI memory (see skills/memory)
+./clip handoff                     write HANDOFF.md for the next AI
 ./clip state                       show STATE.md
 ./clip dashboard                   campaigns + posts logged
 ```

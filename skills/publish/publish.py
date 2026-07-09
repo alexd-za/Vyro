@@ -360,6 +360,14 @@ def publish_uploadpost(pkg, caption):
 
 
 def log_to_ledger(pkg, url):
+    try:  # mirror into shared AI memory (best-effort)
+        import subprocess
+        subprocess.run([sys.executable, str(LEDGER.parents[1] / "tools" / "memory.py"),
+                        "log", f"published {Path(pkg['video']).name} -> {url}",
+                        "--tags", f"stage=publish,campaign={pkg.get('campaign','')}"],
+                       timeout=10)
+    except Exception:
+        pass
     LEDGER.parent.mkdir(parents=True, exist_ok=True)
     if not LEDGER.exists():
         LEDGER.write_text("# Ledger\n\n| date | campaign | clip | platform | url | views |\n"

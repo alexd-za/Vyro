@@ -16,11 +16,20 @@ Goal: many high-quality clips, fast, that earn views. Vyro pays roughly $3 per 1
 - **Never post fully autonomously** to a social account. Prepare and schedule; a human reviews and confirms each batch before it goes live. Unattended bot posting gets accounts banned, which kills the income.
 - Keep everything reproducible: every clip = inputs + a command we can re-run.
 
-## Both agents read this file
-This is the single source of truth for **both Claude Code and Codex**.
-- Codex reads `AGENTS.md` automatically.
+## Every agent reads this file
+This is the single source of truth for **Claude Code, Codex, Gemini CLI, and any future AI**.
+- Codex (and other AGENTS.md-aware tools, e.g. Cursor) read `AGENTS.md` automatically.
 - Claude Code reads `CLAUDE.md`, which imports this file (`@AGENTS.md`) and adds Claude-only notes below the import.
+- Gemini CLI reads `GEMINI.md`, a thin pointer to this file.
 When one runs out of quota, switch to the other — same instructions, same skills, same memory. Do not re-explain the project.
+
+## Shared memory (one brain across every AI and chat)
+`./clip mem` is the memory every agent shares — plain files in `knowledge/memory/`,
+committed to git, so it follows the repo across chats, models, and machines.
+- Session start: `./clip mem recall` (Claude Code does this automatically via hook).
+- Learned something? `./clip mem add "..." --type learning|decision`.
+- Switching AI or stopping? `./clip handoff` → HANDOFF.md for the next agent.
+- Details: `skills/memory/SKILL.md`. STATE.md stays the *current* status; memory is history + knowledge.
 
 ## The pipeline (stages)
 1. **Research** — find what's hooking on the campaign's topic right now. (skill: `trend-research`)
