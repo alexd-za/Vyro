@@ -104,6 +104,10 @@ c_doctor(){
   [ -f tools/ingest.py ] && ok "ingest tool"  || bad "tools/ingest.py missing"
   [ -f tools/produce.py ] && ok "produce tool (9:16 + captions + grade)" || bad "tools/produce.py missing"
   [ -f tools/make_cover.py ] && ok "cover tool" || bad "tools/make_cover.py missing"
+  [ -f tools/memory.py ] && ok "memory tool (./clip mem)" || bad "tools/memory.py missing"
+  [ -f tools/content.py ] && ok "content tool" || bad "tools/content.py missing"
+  [ -f tools/fx.py ] && ok "fx tool (fonts)"   || bad "tools/fx.py missing"
+  [ -f tests/smoke.sh ] && ok "smoke test (bash tests/smoke.sh)" || opt "tests/smoke.sh missing"
   { [ -f AGENT-PLAYBOOK.md ] && [ -f STATE.md ]; } && ok "agent playbook + STATE" || bad "AGENT-PLAYBOOK.md / STATE.md missing"
   if [ -f AGENTS.md ] && [ -f CLAUDE.md ]; then ok "dual-agent config (AGENTS.md + CLAUDE.md)"; else bad "AGENTS.md / CLAUDE.md missing" "./clip setup"; fi
 
@@ -130,10 +134,16 @@ c_doctor(){
 }
 
 # ---------------- setup ----------------
+seed_knowledge(){  # idempotent knowledge-base seed
+  [ -f knowledge/INDEX.md ] || printf '# Knowledge index\n\n- learnings.md — why clips won or lost\n- ledger.md — every shipped clip + its live URL + views\n- MEMORY.md — digest of the shared AI memory (./clip mem)\n' > knowledge/INDEX.md
+  [ -f knowledge/learnings.md ] || printf '# Learnings\n\nOne line per clip that over- or under-performed, and why.\n' > knowledge/learnings.md
+  [ -f knowledge/ledger.md ] || printf '# Ledger\n\n| date | campaign | clip | platform | url | views |\n|------|----------|------|----------|-----|-------|\n' > knowledge/ledger.md
+}
+
 c_setup(){
   hdr "Setup (safe, local only — downloads no remote code)"
   mkdir -p skills knowledge work out briefs inbox tools
-  [ -f setup-agents.sh ] && bash setup-agents.sh
+  seed_knowledge
   [ -f inbox/README.txt ] || printf 'Drop your campaign videos here, then run ./clip ingest.\nOnly drop footage the campaign has approved.\n' > inbox/README.txt
   [ -f STATE.md ] || printf '# STATE\n\n## Mode\noffline\n\n## Next actions\n- Drop videos in inbox/ and run ./clip ingest.\n' > STATE.md
   if [ ! -d .venv ]; then echo "Creating python venv (.venv)…"; python3 -m venv .venv && echo "  done."; fi
@@ -220,7 +230,42 @@ c_produce(){
     echo '       [--reframe crop|blur] [--grade vibrant|moody|none] [--no-captions] [--out f.mp4]'
     return 1
   fi
-  "$PY" tools/produce.py "$@" && mem_log "produced $1" "stage=produce"
+  "$PY" tools/produce.py "$@" && mem_log "produced: $*" "stage=produce"
+}
+
+c_demo(){  # zero-risk guided first run: synthesizes footage, runs the whole pipeline
+  if [ "${1:-}" = "--clean" ]; then
+    rm -rf work/demo out/demo briefs/demo.json work/_unsorted 2>/dev/null
+    echo "demo artifacts removed."; return 0
+  fi
+  hdr "Demo — the full pipeline on synthetic footage (nothing real, nothing posted)"
+  mkdir -p work/demo out/demo briefs knowledge
+  seed_knowledge
+  [ -f briefs/demo.json ] || cat > briefs/demo.json <<'EOF'
+{"campaign":"demo","caption_template":"Watch the demo pipeline run end to end (AI-assisted edit)",
+ "required_hashtags":["#demo"],"banned_phrases":["works fast"],"min_seconds":5,"max_seconds":60,
+ "brand_color":"#FF6A2C","highlight_words":["demo","pipeline"],"ai_generated":true,
+ "platforms":["tiktok"],"notes":"synthetic demo campaign — safe to delete (./clip demo --clean)"}
+EOF
+  [ -f work/demo/source.mp4 ] || run_spin "synthesize 20s source video" \
+    ffmpeg -y -v error -f lavfi -i testsrc2=size=1280x720:rate=30:duration=20 \
+      -f lavfi -i "sine=frequency=440:duration=20" \
+      -c:v libx264 -preset veryfast -c:a aac -shortest work/demo/source.mp4
+  run_spin "select: rank clip moments" "$PY" skills/clip-select/find_moments.py \
+    work/demo/source.mp4 --count 3 --outdir work/demo/candidates >/dev/null || true
+  c_cut work/demo/source.mp4 2 16 out/demo/clip_01.mp4 || return 1
+  echo "  producing (watch the progress bar)…"
+  c_produce out/demo/clip_01.mp4 --brief briefs/demo.json --hook 'DEMO\nPIPELINE' --out out/demo/clip_01_final.mp4 || return 1
+  c_sheet out/demo/clip_01_final.mp4 out/demo/clip_01_sheet.png
+  c_content out/demo/clip_01_final.mp4 --brief briefs/demo.json --hook "the demo pipeline running end to end"
+  c_publish prepare --clip out/demo/clip_01_final.mp4 --brief briefs/demo.json --out out/demo/pkg.json >/dev/null \
+    && c_publish publish --package out/demo/pkg.json | tail -3
+  mem_log "ran ./clip demo" "stage=demo"
+  hdr "Demo complete — everything the pipeline makes:"
+  ls -1 out/demo | sed 's/^/   out\/demo\//'
+  printf "\n  ${D}candidates:${X} work/demo/candidates/candidates.md\n"
+  printf "  ${D}clean up:${X}   ./clip demo --clean\n"
+  printf "  ${B}Next:${X} drop real campaign footage in ${B}inbox/${X} and run ${B}./clip ingest${X}\n\n"
 }
 c_sheet(){  # contact sheet: verify the footage matches the hook BEFORE shipping
   local src="${1:-}"; [ -z "$src" ] && { echo "usage: ./clip sheet <video> [out.png]"; return 1; }
@@ -240,8 +285,10 @@ c_cut(){
     echo "usage: ./clip cut <source> <start> <end> [out.mp4]"
     echo "       times like 00:01:23 or plain seconds"; return 1; fi
   [ -f "$src" ] || { echo "not found: $src"; return 1; }
-  [ -z "$out" ] && out="clip_$(echo "${start}-${end}" | tr -c 'A-Za-z0-9-' '_').mp4"
-  local enc="libx264"; ffmpeg -hide_banner -encoders 2>/dev/null | grep -qw libx264 || enc="mpeg4"
+  [ -z "$out" ] && out="clip_$(printf '%s' "${start}-${end}" | tr -c 'A-Za-z0-9-' '_').mp4"
+  # grep reads to EOF on purpose: with pipefail, grep -q's early exit SIGPIPEs
+  # ffmpeg and fails the pipeline, silently demoting every cut to mpeg4
+  local enc="libx264"; ffmpeg -hide_banner -encoders 2>/dev/null | grep -w libx264 >/dev/null || enc="mpeg4"
   local vargs="-c:v libx264 -preset veryfast -crf 20"; [ "$enc" = mpeg4 ] && vargs="-c:v mpeg4 -q:v 4"
   echo "cutting $src  $start → $end  (encoder: $enc)…"
   if ffmpeg -y -hide_banner -loglevel error -i "$src" -ss "$start" -to "$end" $vargs -c:a aac -movflags +faststart "$out"; then
@@ -294,16 +341,20 @@ c_config(){
   echo
 }
 
+sync_state_mode(){  # keep STATE.md's Mode section matching .env
+  [ -f STATE.md ] && sed -i "0,/^\*\*\(offline\|online\)\*\*/s//**$1**/" STATE.md 2>/dev/null || true
+}
+
 c_mode(){
   if [ -n "${1:-}" ]; then
     case "$1" in
-      offline|clip)   set_env MODE offline; printf "mode → ${B}offline${X} (clips only)\n" ;;
-      online|publish) set_env MODE online;  printf "mode → ${B}online${X} (clips + posts via %s)\n" "$(auto_backend)" ;;
+      offline|clip)   set_env MODE offline; sync_state_mode offline; printf "mode → ${B}offline${X} (clips only)\n" ;;
+      online|publish) set_env MODE online;  sync_state_mode online;  printf "mode → ${B}online${X} (clips + posts via %s)\n" "$(auto_backend)" ;;
       *) echo "usage: ./clip mode [offline|online]   (no arg = toggle)"; return 1 ;;
     esac
   else
-    if is_online; then set_env MODE offline; printf "mode: online → ${B}offline${X} (clips only)\n"
-    else set_env MODE online; printf "mode: offline → ${B}online${X} (clips + posts via %s)\n" "$(auto_backend)"; fi
+    if is_online; then set_env MODE offline; sync_state_mode offline; printf "mode: online → ${B}offline${X} (clips only)\n"
+    else set_env MODE online; sync_state_mode online; printf "mode: offline → ${B}online${X} (clips + posts via %s)\n" "$(auto_backend)"; fi
   fi
 }
 
@@ -318,6 +369,7 @@ Drop videos in ${B}inbox/${X}; state lives in ${B}STATE.md${X} so any session/AI
 ${B}Usage:${X}  ./clip [command]     (no command = interactive menu)
 
   ${B}install${X} [--yes]       install system deps (ffmpeg, python, extras) + setup
+  ${B}demo${X} [--clean]        guided first run: full pipeline on synthetic footage
   ${B}setup${X}                 first-run: folders, venv, .env, agent config, doctor
   ${B}doctor${X}                check the environment and how to fix anything missing
   ${B}ingest${X}                inventory new videos dropped in inbox/
@@ -384,6 +436,7 @@ menu_screen(){
   sect "track / config"
   item 9 "Dashboard"              2 "Doctor"
   item 1 "Setup"                  c "Settings"
+  item d "Run the demo pipeline"
   item m "Toggle offline/online"  h "Help"
   printf "   ${Y}${B}q${X}  Quit\n"
 }
@@ -408,6 +461,7 @@ menu(){
          else printf "  ${Y}offline mode is on.${X} Clips are in ${B}out/<campaign>/${X}; switch with ${B}m${X} (or ${B}./clip online${X}) to post.\n"; fi ;;
       9) c_dashboard ;;
       r|R) c_mem recall ;;
+      d|D) c_demo ;;
       o|O) c_handoff ;;
       m|M) c_mode ;;
       c|C) c_config ;;
@@ -424,6 +478,7 @@ menu(){
 case "${1:-menu}" in
   menu)              menu ;;
   install)           shift; bash install.sh "$@" ;;
+  demo)              shift; c_demo "$@" ;;
   setup)             c_setup ;;
   doctor)            c_doctor ;;
   ingest)            c_ingest ;;

@@ -7,7 +7,7 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
 SANDBOX="$(mktemp -d)"
 trap 'rm -rf "$SANDBOX"' EXIT
-cp -r clip tools skills content-template.md .env.example "$SANDBOX/"
+cp -r clip tools skills .env.example "$SANDBOX/"
 cd "$SANDBOX"
 mkdir -p inbox knowledge briefs out work
 PASS=0; FAIL=0
