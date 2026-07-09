@@ -104,6 +104,13 @@ def main():
         "## Cover",
         f"**Generate:** `./clip cover {clip} \"{hook.upper()}\"`",
         "",
+        "## Cover image prompt  (for your image model — GPT-image, Imagen, etc.)",
+        f"Design a 1080x1920 (9:16) short-form video cover for the \"{campaign}\" campaign. "
+        f"Bold condensed title text reading \"{hook.upper()}\" in white with a thick dark "
+        f"outline, accent color {brief.get('brand_color', '#FF6A2C')}. High contrast, clean, "
+        "scroll-stopping, tasteful — no clutter. Do not include any health or efficacy "
+        "claims, and no logos or watermarks that are not part of this campaign.",
+        "",
         "## Your captions  (left blank on purpose — these two are yours)",
         "- [ ] My caption 1:",
         "- [ ] My caption 2:",

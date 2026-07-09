@@ -58,5 +58,15 @@ committed to git, so it follows the repo across chats, models, and machines.
   agents call via one Composio MCP endpoint. Use it to log the ledger to a live Vyro
   dashboard, store clips, or send notifications — NOT to post to TikTok (that's `publish`).
 
+## Working from ChatGPT / Codex (and images)
+- **Codex CLI** reads this file natively — same pipeline, same `./clip` commands, same memory.
+  Point it at `AGENT-PLAYBOOK.md` and it operates the factory exactly like Claude Code.
+- **Cover images:** every content sheet (`./clip content`) includes a ready-to-paste
+  **"Cover image prompt"** — use it with whatever image model your AI has (GPT-image in
+  ChatGPT, Imagen in Gemini, or any other). The local no-model fallback stays `./clip cover`.
+- **Claude Code plugins that pair well** (install per-user, not bundled here):
+  `superpowers` (workflow discipline), `ponytail` (anti-over-engineering reviews),
+  `graphify` (knowledge-graph over this repo's docs/ledger). Optional, never required.
+
 ## When stuck
 Different model, different idea. If one agent is spinning on a problem, hand it to the other with the plan written to `PLAN.md`.

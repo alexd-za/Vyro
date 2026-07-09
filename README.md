@@ -12,7 +12,8 @@ A foundation for running **Claude Code + Codex as one shared system** on your Fe
 ## Start here
 ```bash
 ./install.sh     # one command: system deps + venv + extras + health check
-./clip           # opens the menu — or use ./clip doctor, select, cut, produce, publish
+./clip ui        # web dashboard: drag & drop videos, auto-sort, produce, captions
+./clip           # or the terminal menu — ./clip doctor, select, cut, produce, publish
 ```
 Then (optional) open this folder in Claude Code or Codex and paste `INSTALL-PROMPT.md`
 to pull in the extra skills/tools. **Full walkthrough: `GETTING-STARTED.md`.**

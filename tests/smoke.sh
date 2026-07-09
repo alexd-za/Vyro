@@ -80,6 +80,17 @@ echo "== progress bar render =="
 python3 tools/produce.py vonly.mp4 --no-captions --grade none --out out/bar.mp4 2>/dev/null
 check "bar render is 1080x1920"     'ffprobe -v error -show_entries stream=width,height -of csv=p=0 out/bar.mp4 | grep -q 1080,1920'
 
+echo "== sort (auto-name + hashtags <=4) =="
+ffmpeg -y -v error -f lavfi -i testsrc2=size=320x180:rate=30:duration=3 -c:v libx264 -preset veryfast "inbox/Motrin_Mannequin_Challenge.mp4"
+python3 tools/ingest.py >/dev/null
+python3 tools/sort.py auto --yes >/dev/null
+check "sorted into named campaign"   '[ -f work/motrin-mannequin-challenge/Motrin_Mannequin_Challenge.mp4 ]'
+check "brief + campaign notes made"  '[ -f briefs/motrin-mannequin-challenge.json ] && [ -f work/motrin-mannequin-challenge/CAMPAIGN-NOTES.md ]'
+check "hashtags capped at 4"         '[ "$(python3 tools/sort.py hashtags motrin-mannequin-challenge | grep -oE "#[a-z0-9]+" | wc -l)" -le 4 ]'
+
+echo "== web ui =="
+check "webui self-test"              'python3 tools/webui.py --check >/dev/null 2>&1'
+
 echo "== handoff =="
 ./clip handoff >/dev/null
 check "HANDOFF.md written"          'grep -q "memory recall" HANDOFF.md || grep -q "Clip Factory" HANDOFF.md'
