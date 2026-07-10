@@ -11,6 +11,9 @@ What it does
   * assign staged videos to campaigns (creates the campaign if missing)
   * kick off `./clip produce` in background jobs with live tail output
   * memory feed (`./clip mem recall`) and a new-campaign brief form
+  * sectioned app (Studio / Campaigns / Jobs / Memory / Settings, hash-routed)
+  * settings tab writes allowlisted keys to ROOT/.env (gitignored); the API
+    never returns a stored secret to the browser — only set/last4
 
 What it deliberately does NOT do
   * it never binds anything but 127.0.0.1
@@ -39,6 +42,21 @@ MAX_JSON = 1 << 20                             # JSON POST body cap
 MAX_HASHTAGS = 4
 GRADES = ("vibrant", "moody", "none")
 REFRAMES = ("crop", "blur")
+MODES = ("offline", "online")
+
+# settings — the ONLY keys /api/settings may ever write to .env
+SETTINGS_KEYS = frozenset({
+    "OPERATOR_NAME", "MODE", "UPLOADPOST_API_KEY", "SCHEDULER_BASE_URL",
+    "SCHEDULER_API_KEY", "TIKTOK_CLIENT_KEY", "TIKTOK_ACCESS_TOKEN",
+    "COMPOSIO_API_KEY",
+})
+MAX_SETTING = 500                              # max chars for one settings value
+SETTINGS_BACKENDS = {                          # backend -> the secret that means "connected"
+    "uploadpost": "UPLOADPOST_API_KEY",
+    "scheduler": "SCHEDULER_API_KEY",
+    "tiktok": "TIKTOK_ACCESS_TOKEN",
+    "composio": "COMPOSIO_API_KEY",
+}
 
 CONTENT_TYPES = {
     ".mp4": "video/mp4", ".mov": "video/quicktime", ".mkv": "video/x-matroska",
@@ -127,6 +145,7 @@ class Api:
         self.root = Path(root).resolve()
         self.jobs = Jobs()
         self._manifest_lock = threading.Lock()
+        self._env_lock = threading.Lock()
 
     # ---- safety primitives ----
     def safe_path(self, rel):
@@ -192,6 +211,72 @@ class Api:
                 if line.startswith("MODE="):
                     mode = line.split("=", 1)[1].strip().strip("\"'") or "offline"
         return "online" if mode in ("online", "publish") else "offline"
+
+    def _env_values(self):
+        """Parse ROOT/.env into a dict (quotes stripped)."""
+        vals = {}
+        f = self.root / ".env"
+        if f.is_file():
+            for line in f.read_text().splitlines():
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                k, v = line.split("=", 1)
+                vals[k.strip()] = v.strip().strip("\"'")
+        return vals
+
+    def settings(self):
+        """Settings snapshot for the UI. A stored secret NEVER leaves this
+        process in full — only whether it is set, plus its last 4 chars."""
+        env = self._env_values()
+
+        def status(key):
+            v = env.get(key, "")
+            if v.startswith("your_"):      # untouched .env.example placeholder
+                v = ""
+            return {"set": bool(v), "last4": v[-4:] if v else ""}
+
+        operator = env.get("OPERATOR_NAME", "")
+        if operator.startswith("your_"):
+            operator = ""
+        return {"operator": operator, "mode": self.mode(),
+                "backends": {name: status(key)
+                             for name, key in SETTINGS_BACKENDS.items()}}
+
+    def set_setting(self, key, value):
+        """Write one allowlisted KEY=value into ROOT/.env (created from
+        .env.example if missing). Empty value clears the key. Values are
+        stripped, capped, and may not contain newlines (env-injection guard)."""
+        key = str(key or "").strip()
+        if key not in SETTINGS_KEYS:
+            raise ApiError(400, f"unknown setting {key!r}")
+        value = str(value if value is not None else "").strip()
+        if len(value) > MAX_SETTING:
+            raise ApiError(400, f"value too long (max {MAX_SETTING} chars)")
+        if "\n" in value or "\r" in value:
+            raise ApiError(400, "newlines are not allowed in a setting")
+        if key == "MODE" and value and value not in MODES:
+            raise ApiError(400, f"MODE must be one of {MODES}")
+        envf = self.root / ".env"
+        with self._env_lock:
+            if not envf.is_file():
+                example = self.root / ".env.example"
+                envf.write_text(example.read_text() if example.is_file() else "")
+            out, seen = [], False
+            for line in envf.read_text().splitlines():
+                if re.match(r"\s*" + re.escape(key) + r"\s*=", line):
+                    if seen:
+                        continue                       # collapse duplicate lines
+                    seen = True
+                    if value:
+                        out.append(f"{key}={value}")   # update in place
+                    # empty value -> drop the line entirely (key cleared)
+                else:
+                    out.append(line)
+            if value and not seen:
+                out.append(f"{key}={value}")
+            envf.write_text("\n".join(out) + "\n" if out else "")
+        return self.settings()
 
     def _load_manifest(self):
         mf = self.root / "knowledge" / "inbox-manifest.json"
@@ -522,6 +607,8 @@ class Handler(BaseHTTPRequestHandler):
             self.guarded(lambda: self.send_json({"jobs": self.api.jobs.list()}))
         elif path == "/api/memory":
             self.guarded(lambda: self.send_json(self.api.memory()))
+        elif path == "/api/settings":
+            self.guarded(lambda: self.send_json(self.api.settings()))
         elif path == "/vendor/three.min.js":
             self.guarded(self.serve_vendor_three)
         elif path.startswith("/media/"):
@@ -584,7 +671,8 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         path = unquote(urlparse(self.path).path)
         routes = {"/api/upload": self.post_upload, "/api/assign": self.post_assign,
-                  "/api/produce": self.post_produce, "/api/campaign": self.post_campaign}
+                  "/api/produce": self.post_produce, "/api/campaign": self.post_campaign,
+                  "/api/settings": self.post_settings}
         fn = routes.get(path)
         if fn is None:
             self.send_json({"error": "not found"}, 404)
@@ -623,6 +711,10 @@ class Handler(BaseHTTPRequestHandler):
                                   reframe=body.get("reframe", "crop"))
         self.send_json(result)
 
+    def post_settings(self):
+        body = self.read_json()
+        self.send_json(self.api.set_setting(body.get("key", ""), body.get("value", "")))
+
     def post_campaign(self):
         body = self.read_json()
         result = self.api.new_campaign(body.get("name", ""),
@@ -656,17 +748,19 @@ PAGE = r"""<!doctype html>
   --glow:0 8px 30px rgba(255,106,44,.28);
   --shadow:0 10px 34px rgba(0,0,0,.35);
   --term-bg:#0a0908; --term-ink:#cbc1ae;
+  --nav-bg:rgba(12,10,9,.82);
 }
 @media (prefers-color-scheme: light){
   :root{
     --bg:#faf6f0; --bg2:#f2ebe1;
     --panel:rgba(255,255,255,.66); --panel2:rgba(40,30,20,.055);
     --border:rgba(40,30,20,.12); --border2:rgba(40,30,20,.24);
-    --text:#241d15; --muted:#87796a;
-    --accent-ink:#c74a12; --accent-soft:rgba(255,106,44,.10);
-    --ok:#1f8a4c; --err:#cf4433;
+    --text:#241d15; --muted:#75675a;
+    --accent-ink:#ad400f; --accent-soft:rgba(255,106,44,.10);
+    --ok:#187240; --err:#b93526;
     --glow:0 8px 26px rgba(255,106,44,.25);
     --shadow:0 10px 30px rgba(40,30,20,.10);
+    --nav-bg:rgba(250,246,240,.86);
   }
 }
 *{box-sizing:border-box;margin:0;padding:0}
@@ -719,6 +813,26 @@ body{
 .badge.online{color:#7fe0a8;border-color:rgba(127,224,168,.5)}
 .badge.offline{color:#ffb090;border-color:rgba(255,176,144,.5)}
 .hero .hint{font-size:12px;color:rgba(238,228,214,.5)}
+
+/* ============ top nav (section tabs) ============ */
+.topnav{position:sticky;top:0;z-index:40;border-bottom:1px solid var(--border);
+  background:var(--nav-bg);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px)}
+.tabs{display:flex;gap:2px;overflow-x:auto}
+.tab{display:inline-flex;align-items:center;gap:8px;padding:13px 16px 11px;
+  font-size:13px;font-weight:650;letter-spacing:.02em;color:var(--muted);
+  text-decoration:none;border-bottom:2px solid transparent;white-space:nowrap;
+  transition:color .2s, border-color .2s}
+.tab:hover{color:var(--text)}
+.tab[aria-current]{color:var(--accent-ink);border-bottom-color:var(--accent)}
+.tab:focus-visible,button:focus-visible,summary:focus-visible{
+  outline:2px solid var(--accent);outline-offset:2px}
+.tabbadge{min-width:19px;height:19px;padding:0 6px;border-radius:999px;
+  background:var(--grad);color:#180b04;font-size:11px;font-weight:800;
+  display:inline-grid;place-items:center;line-height:1}
+[hidden]{display:none !important}
+.view{padding-top:8px}
+.narrow{max-width:820px}
+.block{margin-bottom:28px}
 
 /* ============ shared bits ============ */
 section{margin-bottom:28px}
@@ -897,6 +1011,25 @@ pre.mem{
 pre.mem::after{content:"▌";color:var(--accent);animation:blink 1.15s steps(1) infinite}
 @keyframes blink{50%{opacity:0}}
 
+/* ============ settings ============ */
+.setcard{margin-bottom:18px}
+.setcard h3{font-size:15px;font-weight:750;letter-spacing:-.01em;margin-bottom:3px}
+.setdesc{font-size:12.5px;color:var(--muted);margin-bottom:10px}
+form.setform{display:flex;flex-direction:column;gap:6px}
+form.setform label{font-size:12px;font-weight:600;color:var(--muted)}
+.setrow{display:flex;gap:8px}
+.setrow input{flex:1}
+.seg{display:inline-flex;gap:3px;padding:3px;border:1px solid var(--border);
+  border-radius:12px;background:var(--bg2)}
+.seg button{border-color:transparent;background:transparent;padding:7px 20px;border-radius:9px}
+.seg button[aria-pressed="true"]{background:var(--grad);color:#180b04}
+.seg button[aria-pressed="true"]:hover{color:#180b04;transform:none}
+.conn{padding:14px 0 8px;border-top:1px solid var(--border);margin-top:12px}
+.conn-head{display:flex;align-items:center;gap:10px;margin-bottom:2px}
+.conn-name{font-weight:700;font-size:14px}
+.pill.on{color:var(--ok);border-color:currentColor;background:rgba(76,196,126,.08)}
+.setnote{font-size:12px;color:var(--muted);padding:2px 4px}
+
 /* ============ toast ============ */
 #toast{
   position:fixed;left:50%;bottom:26px;transform:translate(-50%,20px);opacity:0;z-index:50;
@@ -927,70 +1060,171 @@ pre.mem::after{content:"▌";color:var(--accent);animation:blink 1.15s steps(1) 
     <p class="tagline">Approved campaign video in — scroll-stopping vertical clips out.</p>
     <div class="hero-meta">
       <span id="mode" class="badge">…</span>
+      <span id="operator" class="badge" hidden></span>
       <span class="hint">local · 127.0.0.1 · publishing stays in the terminal</span>
     </div>
   </div>
 </div>
 
-<div class="wrap">
-  <div class="stats">
-    <div class="stat card reveal"><div class="num" id="stat-campaigns">0</div><div class="cap">Campaigns</div></div>
-    <div class="stat card reveal"><div class="num" id="stat-clips">0</div><div class="cap">Clips produced</div></div>
-    <div class="stat card reveal"><div class="num" id="stat-unsorted">0</div><div class="cap">Awaiting sort</div></div>
+<nav class="topnav" aria-label="Sections">
+  <div class="wrap tabs">
+    <a class="tab" id="tab-studio" href="#studio">Studio</a>
+    <a class="tab" id="tab-campaigns" href="#campaigns">Campaigns</a>
+    <a class="tab" id="tab-jobs" href="#jobs">Jobs<span class="tabbadge" id="jobsbadge" hidden>0</span></a>
+    <a class="tab" id="tab-memory" href="#memory">Memory</a>
+    <a class="tab" id="tab-settings" href="#settings">Settings</a>
   </div>
+</nav>
 
-  <main>
-    <div>
-      <div id="drop" class="drop reveal">
-        <div class="glyph">▼</div>
-        <div class="t1">Drop a campaign video to start</div>
-        <div class="t2">.mp4 · .mov · .mkv · .webm · .avi · .m4v — saved to <code>inbox/</code>, then ingested automatically</div>
-        <button id="pick" type="button">Choose files…</button>
-        <input type="file" id="file" multiple accept=".mp4,.mov,.mkv,.webm,.avi,.m4v,video/*" hidden>
-      </div>
-
-      <section id="unsorted-sec" hidden>
-        <h2 class="label">Staged — needs a campaign</h2>
-        <div id="unsorted"></div>
-      </section>
-
-      <section>
-        <h2 class="label">Campaign board</h2>
-        <div id="campaigns"><div class="empty">Loading…</div></div>
-      </section>
-
-      <section class="card reveal" id="newcamp">
-        <h2 class="label">New campaign</h2>
-        <form id="campform">
-          <label>Name
-            <input name="name" placeholder="e.g. beast-games" required>
-          </label>
-          <label>Required hashtags <span class="fieldnote">(comma separated, max 4)</span>
-            <input name="hashtags" placeholder="#fyp, #brandname">
-          </label>
-          <label class="full">Banned phrases <span class="fieldnote">(comma separated — wording the brief forbids)</span>
-            <input name="banned" placeholder="guaranteed results, cures">
-          </label>
-          <label class="check full"><input type="checkbox" name="ad"> Requires <code>#ad</code> disclosure</label>
-          <div class="actions">
-            <button class="primary" type="submit">Create brief</button>
-            <span class="fieldnote" id="campnote">writes briefs/&lt;name&gt;.json + work/ and out/ folders</span>
-          </div>
-        </form>
-      </section>
+<div class="wrap">
+  <section class="view" id="sec-studio">
+    <div class="stats">
+      <div class="stat card reveal"><div class="num" id="stat-campaigns">0</div><div class="cap">Campaigns</div></div>
+      <div class="stat card reveal"><div class="num" id="stat-clips">0</div><div class="cap">Clips produced</div></div>
+      <div class="stat card reveal"><div class="num" id="stat-unsorted">0</div><div class="cap">Awaiting sort</div></div>
     </div>
 
-    <aside>
-      <section class="reveal">
-        <h2 class="label">Jobs</h2>
-        <div id="jobs"><div class="empty">Nothing running — produce a clip or drop a video.</div></div>
-      </section>
-      <section class="term reveal">
-        <div class="tbar"><b></b><b></b><b></b><span>clip mem recall</span></div>
-        <pre class="mem" id="memory">…</pre>
-      </section>
-    </aside>
-  </main>
+    <div id="drop" class="drop reveal">
+      <div class="glyph">▼</div>
+      <div class="t1">Drop a campaign video to start</div>
+      <div class="t2">.mp4 · .mov · .mkv · .webm · .avi · .m4v — saved to <code>inbox/</code>, then ingested automatically</div>
+      <button id="pick" type="button">Choose files…</button>
+      <input type="file" id="file" multiple accept=".mp4,.mov,.mkv,.webm,.avi,.m4v,video/*" hidden aria-label="Choose video files">
+    </div>
+
+    <div class="block" id="unsorted-sec" hidden>
+      <h2 class="label">Staged — needs a campaign</h2>
+      <div id="unsorted"></div>
+    </div>
+  </section>
+
+  <section class="view" id="sec-campaigns" hidden>
+    <div class="block">
+      <h2 class="label">Campaign board</h2>
+      <div id="board"><div class="empty">Loading…</div></div>
+    </div>
+
+    <div class="card reveal block" id="newcamp">
+      <h2 class="label">New campaign</h2>
+      <form id="campform">
+        <label>Name
+          <input name="name" placeholder="e.g. beast-games" required>
+        </label>
+        <label>Required hashtags <span class="fieldnote">(comma separated, max 4)</span>
+          <input name="hashtags" placeholder="#fyp, #brandname">
+        </label>
+        <label class="full">Banned phrases <span class="fieldnote">(comma separated — wording the brief forbids)</span>
+          <input name="banned" placeholder="guaranteed results, cures">
+        </label>
+        <label class="check full"><input type="checkbox" name="ad"> Requires <code>#ad</code> disclosure</label>
+        <div class="actions">
+          <button class="primary" type="submit">Create brief</button>
+          <span class="fieldnote" id="campnote">writes briefs/&lt;name&gt;.json + work/ and out/ folders</span>
+        </div>
+      </form>
+    </div>
+  </section>
+
+  <section class="view narrow" id="sec-jobs" hidden>
+    <h2 class="label">Jobs</h2>
+    <div id="joblist"><div class="empty">Nothing running — produce a clip or drop a video.</div></div>
+  </section>
+
+  <section class="view narrow" id="sec-memory" hidden>
+    <h2 class="label">Memory</h2>
+    <div class="term reveal">
+      <div class="tbar"><b></b><b></b><b></b><span>clip mem recall</span></div>
+      <pre class="mem" id="memlog">…</pre>
+    </div>
+  </section>
+
+  <section class="view narrow" id="sec-settings" hidden>
+    <h2 class="label">Settings</h2>
+
+    <div class="card setcard reveal">
+      <h3>Operator</h3>
+      <p class="setdesc">Who is running this factory — shown as a chip in the header and used to attribute updates.</p>
+      <form class="setform" id="opform">
+        <label for="opname">Operator name</label>
+        <div class="setrow">
+          <input id="opname" name="OPERATOR_NAME" maxlength="80" placeholder="e.g. Alex" autocomplete="off">
+          <button class="primary" type="submit">Save</button>
+        </div>
+      </form>
+    </div>
+
+    <div class="card setcard reveal">
+      <h3>Mode</h3>
+      <p class="setdesc">Online enables the publish step <em>in the terminal</em> — this UI never posts to a live account either way.</p>
+      <div class="seg" role="group" aria-label="Pipeline mode">
+        <button type="button" id="mode-offline" aria-pressed="true">Offline</button>
+        <button type="button" id="mode-online" aria-pressed="false">Online</button>
+      </div>
+    </div>
+
+    <div class="card setcard reveal">
+      <h3>Connections</h3>
+      <p class="setdesc">Keys used by the terminal-side publish and scheduling skills. Saved values are never sent back to the browser — only the last 4 characters.</p>
+
+      <div class="conn">
+        <div class="conn-head"><span class="conn-name">Upload-Post</span><span class="pill" id="pill-uploadpost">Not set</span></div>
+        <p class="setdesc">Pre-audited cross-poster for TikTok / Reels / Shorts. Get a key: upload-post.com → dashboard → API keys.</p>
+        <form class="setform">
+          <label for="in-uploadpost">Upload-Post API key</label>
+          <div class="setrow">
+            <input id="in-uploadpost" name="UPLOADPOST_API_KEY" type="password" autocomplete="off" placeholder="API key">
+            <button class="primary" type="submit">Save</button>
+          </div>
+        </form>
+      </div>
+
+      <div class="conn">
+        <div class="conn-head"><span class="conn-name">Scheduler</span><span class="pill" id="pill-scheduler">Not set</span></div>
+        <p class="setdesc">A pre-audited scheduler (Post for Me, PostPeer, …). Base URL + API key: your provider's developer settings.</p>
+        <form class="setform">
+          <label for="in-scheduler-url">Scheduler base URL</label>
+          <div class="setrow">
+            <input id="in-scheduler-url" name="SCHEDULER_BASE_URL" type="text" autocomplete="off" placeholder="https://api.yourprovider.com">
+          </div>
+          <label for="in-scheduler-key">Scheduler API key</label>
+          <div class="setrow">
+            <input id="in-scheduler-key" name="SCHEDULER_API_KEY" type="password" autocomplete="off" placeholder="API key">
+            <button class="primary" type="submit">Save</button>
+          </div>
+        </form>
+      </div>
+
+      <div class="conn">
+        <div class="conn-head"><span class="conn-name">TikTok official</span><span class="pill" id="pill-tiktok">Not set</span></div>
+        <p class="setdesc">Your own app on TikTok's Content Posting API. Client key + access token: developers.tiktok.com → your app.</p>
+        <form class="setform">
+          <label for="in-tiktok-client">TikTok client key</label>
+          <div class="setrow">
+            <input id="in-tiktok-client" name="TIKTOK_CLIENT_KEY" type="password" autocomplete="off" placeholder="Client key">
+          </div>
+          <label for="in-tiktok-token">TikTok access token</label>
+          <div class="setrow">
+            <input id="in-tiktok-token" name="TIKTOK_ACCESS_TOKEN" type="password" autocomplete="off" placeholder="Access token">
+            <button class="primary" type="submit">Save</button>
+          </div>
+        </form>
+      </div>
+
+      <div class="conn">
+        <div class="conn-head"><span class="conn-name">Composio</span><span class="pill" id="pill-composio">Not set</span></div>
+        <p class="setdesc">Shared tool layer (Sheets, Drive, Notion, Slack). Get a key: composio.dev → dashboard → API settings.</p>
+        <form class="setform">
+          <label for="in-composio">Composio API key</label>
+          <div class="setrow">
+            <input id="in-composio" name="COMPOSIO_API_KEY" type="password" autocomplete="off" placeholder="API key">
+            <button class="primary" type="submit">Save</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <p class="setnote reveal">Danger-free zone: everything here writes to <code>.env</code> (gitignored) on this machine only. Nothing is uploaded anywhere, and clearing a field removes its key.</p>
+  </section>
 </div>
 <div id="toast"></div>
 
@@ -1007,6 +1241,23 @@ const fmtSize = n => n == null ? "" :
   n >= 1024  ? Math.round(n/1024)+" KB" : n+" B";
 const fmtDur = s => s == null ? "" : Math.round(s)+"s";
 const REDUCED = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+/* ---------- hash router (tabs) ---------- */
+const TABS = ["studio", "campaigns", "jobs", "memory", "settings"];
+function route(){
+  let cur = location.hash.replace("#", "");
+  if(!TABS.includes(cur)) cur = "studio";
+  for(const t of TABS){
+    document.getElementById("sec-" + t).hidden = t !== cur;
+    const tab = document.getElementById("tab-" + t);
+    if(t === cur) tab.setAttribute("aria-current", "page");
+    else tab.removeAttribute("aria-current");
+  }
+  revealIn(document.getElementById("sec-" + cur));
+  if(cur === "settings") refreshSettings();
+  if(cur === "memory") refreshMemory();
+}
+addEventListener("hashchange", route);
 
 let toastT;
 function toast(msg, isErr){
@@ -1034,6 +1285,7 @@ function revealIn(scope){
   const els = (scope || document).querySelectorAll(".reveal:not(.in)");
   let i = 0;
   for(const el of els){
+    if(el.closest("[hidden]")) continue;   // revealed by route() when its tab opens
     if(!io || booted){ el.classList.add("in"); continue; }
     el.style.transitionDelay = Math.min(i++ * 70, 420) + "ms";
     io.observe(el);
@@ -1169,7 +1421,7 @@ function unsortedRow(u){
     <div class="who"><div class="fname">${esc(u.name)}</div>
       <div class="meta">${fmtDur(u.duration)}${u.duration!=null?" · ":""}${fmtSize(u.size)} · id ${esc(u.id)}</div></div>
     <form class="assign" data-id="${esc(u.id)}">
-      <input name="campaign" placeholder="campaign name" value="${esc(suggestSlug(u.name))}" required>
+      <input name="campaign" aria-label="Campaign name" placeholder="campaign name" value="${esc(suggestSlug(u.name))}" required>
       <button class="primary">Assign</button>
     </form></div>`;
 }
@@ -1182,10 +1434,10 @@ function clipCard(k){
       <summary>Content sheet</summary><pre>loading…</pre></details>`;
   const prod = k.final ? "" : `
     <form class="produce" data-rel="${esc(k.rel)}">
-      <input name="hook" placeholder="Hook title (on-screen, first 2s)" maxlength="120">
+      <input name="hook" aria-label="Hook title" placeholder="Hook title (on-screen, first 2s)" maxlength="120">
       <div class="row">
-        <select name="grade"><option>vibrant</option><option>moody</option><option>none</option></select>
-        <select name="reframe"><option>crop</option><option>blur</option></select>
+        <select name="grade" aria-label="Color grade"><option>vibrant</option><option>moody</option><option>none</option></select>
+        <select name="reframe" aria-label="Reframe mode"><option>crop</option><option>blur</option></select>
       </div>
       <button class="primary">Produce 9:16</button>
     </form>`;
@@ -1219,10 +1471,10 @@ async function refreshState(){
     setStat("stat-unsorted", s.unsorted.length);
     $("#unsorted-sec").hidden = !s.unsorted.length;
     $("#unsorted").innerHTML = s.unsorted.map(unsortedRow).join("");
-    $("#campaigns").innerHTML = s.campaigns.length
+    $("#board").innerHTML = s.campaigns.length
       ? s.campaigns.map(campaignCard).join("")
       : `<div class="empty">No campaigns yet — drop a video to start, or create one below.</div>`;
-    revealIn($("#unsorted")); revealIn($("#campaigns"));
+    revealIn($("#unsorted")); revealIn($("#board"));
   }catch(e){ toast("state: " + e.message, true); }
 }
 
@@ -1248,6 +1500,23 @@ document.addEventListener("submit", async e => {
         body: JSON.stringify({ clip: f.dataset.rel, hook: f.hook.value,
                                grade: f.grade.value, reframe: f.reframe.value }) });
       toast("producing — watch the jobs panel"); refreshJobs();
+    }catch(err){ toast(err.message, true); }
+    btn.disabled = false;
+  }
+  if(f.matches("form.setform")){
+    e.preventDefault();
+    const btn = f.querySelector("button"); btn.disabled = true;
+    try{
+      let saved = 0;
+      for(const inp of f.querySelectorAll("input[name]")){
+        if(!inp.dataset.dirty) continue;               // only send what was edited
+        const s = await saveSetting(inp.name, inp.value);
+        if(inp.type === "password") inp.value = "";    // secrets never linger in the DOM
+        delete inp.dataset.dirty;
+        applySettings(s);
+        saved++;
+      }
+      toast(saved ? "saved — written to .env" : "nothing changed");
     }catch(err){ toast(err.message, true); }
     btn.disabled = false;
   }
@@ -1296,7 +1565,11 @@ async function refreshJobs(){
       if(prevStatus[j.id] === "running" && j.status !== "running") stateStale = true;
       prevStatus[j.id] = j.status;
     }
-    $("#jobs").innerHTML = jobs.length ? jobs.map(j => `
+    const running = jobs.filter(j => j.status === "running").length;
+    const badge = $("#jobsbadge");
+    badge.hidden = !running;
+    badge.textContent = running;
+    $("#joblist").innerHTML = jobs.length ? jobs.map(j => `
       <div class="card job">
         <div class="job-head"><span class="dot ${esc(j.status)}"></span>
           <span class="label2">${esc(j.label)}</span>
@@ -1311,10 +1584,49 @@ async function refreshJobs(){
 async function refreshMemory(){
   try{
     const m = await api("/api/memory");
-    $("#memory").textContent = m.lines.join("\n");
-  }catch(e){ $("#memory").textContent = "(memory unavailable)"; }
+    $("#memlog").textContent = m.lines.join("\n");
+  }catch(e){ $("#memlog").textContent = "(memory unavailable)"; }
 }
-refreshState(); refreshJobs(); refreshMemory();
+
+/* ---------- settings ---------- */
+document.addEventListener("input", e => {
+  if(e.target.closest && e.target.closest("form.setform")) e.target.dataset.dirty = "1";
+});
+async function saveSetting(key, value){
+  return api("/api/settings", { method:"POST",
+    headers:{ "Content-Type":"application/json" },
+    body: JSON.stringify({ key, value }) });
+}
+function applySettings(s){
+  const chip = $("#operator");
+  chip.hidden = !s.operator;
+  if(s.operator) chip.textContent = "Operator: " + s.operator;
+  const op = $("#opname");
+  if(!op.dataset.dirty && document.activeElement !== op) op.value = s.operator || "";
+  $("#mode-offline").setAttribute("aria-pressed", String(s.mode === "offline"));
+  $("#mode-online").setAttribute("aria-pressed", String(s.mode === "online"));
+  const badge = $("#mode");
+  badge.textContent = s.mode; badge.className = "badge " + s.mode;
+  for(const [name, b] of Object.entries(s.backends || {})){
+    const pill = document.getElementById("pill-" + name);
+    if(!pill) continue;
+    pill.textContent = b.set ? "Connected ····" + b.last4 : "Not set";
+    pill.className = "pill" + (b.set ? " on" : "");
+  }
+}
+async function refreshSettings(){
+  try{ applySettings(await api("/api/settings")); }
+  catch(e){ /* transient — retried on next visit */ }
+}
+["offline", "online"].forEach(m => {
+  document.getElementById("mode-" + m).addEventListener("click", async () => {
+    try{ applySettings(await saveSetting("MODE", m)); toast("mode → " + m); }
+    catch(e){ toast(e.message, true); }
+  });
+});
+
+route();
+refreshState(); refreshJobs(); refreshMemory(); refreshSettings();
 setInterval(refreshJobs, 2000);
 setInterval(refreshState, 15000);
 setInterval(refreshMemory, 30000);
@@ -1403,7 +1715,34 @@ def self_check():
     except ApiError:
         pass
 
-    # 7. live routes against the temp root (ephemeral port, 127.0.0.1)
+    # 7. page structure: unique element ids, every tab + section present
+    ids = re.findall(r'id="([^"]+)"', PAGE)
+    dupes = {i for i in ids if ids.count(i) > 1}
+    assert not dupes, f"duplicate element ids in PAGE: {dupes}"
+    for t in ("studio", "campaigns", "jobs", "memory", "settings"):
+        assert f'id="sec-{t}"' in PAGE and f'id="tab-{t}"' in PAGE, f"tab {t} missing"
+
+    # 8. settings guardrails: allowlist, env-injection, length, MODE values
+    for bad_key in ("PATH", "LD_PRELOAD", "MODE2", ""):
+        try:
+            api.set_setting(bad_key, "x")
+            raise AssertionError(f"non-allowlisted setting accepted: {bad_key!r}")
+        except ApiError as e:
+            assert e.status == 400
+    for bad_val in ("a\nUPLOADPOST_API_KEY=stolen", "a\rMODE=online", "x" * 501):
+        try:
+            api.set_setting("OPERATOR_NAME", bad_val)
+            raise AssertionError(f"bad settings value accepted: {bad_val[:24]!r}")
+        except ApiError as e:
+            assert e.status == 400
+    try:
+        api.set_setting("MODE", "yolo")
+        raise AssertionError("invalid MODE accepted")
+    except ApiError as e:
+        assert e.status == 400
+    assert not (root / ".env").exists(), ".env written despite rejected values"
+
+    # 9. live routes against the temp root (ephemeral port, 127.0.0.1)
     srv = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
     srv.api = api
     port = srv.server_address[1]
@@ -1461,6 +1800,36 @@ def self_check():
             up = json.loads(resp.read())
             assert up["saved"] == ["tiny.mp4"]
         assert (root / "inbox" / "tiny.mp4").read_bytes() == b"FAKEMP4DATA"
+
+        # settings round-trip: write, mask, update-in-place, clear
+        secret = "sk-live-FAKE-abcd1234WXYZ"
+        api.set_setting("OPERATOR_NAME", "Check Bot")
+        api.set_setting("UPLOADPOST_API_KEY", secret)
+        api.set_setting("MODE", "online")
+        with urllib.request.urlopen(base + "/api/settings") as resp:
+            raw = resp.read()
+            assert secret.encode() not in raw, "full secret leaked to the client"
+            s = json.loads(raw)
+            assert set(s) == {"operator", "mode", "backends"}
+            assert s["operator"] == "Check Bot" and s["mode"] == "online"
+            assert s["backends"]["uploadpost"] == {"set": True, "last4": "WXYZ"}
+            assert s["backends"]["composio"] == {"set": False, "last4": ""}
+        envtxt = (root / ".env").read_text()
+        assert f"UPLOADPOST_API_KEY={secret}" in envtxt
+        assert envtxt.count("UPLOADPOST_API_KEY=") == 1
+        api.set_setting("UPLOADPOST_API_KEY", secret)  # re-save: still one line
+        assert (root / ".env").read_text().count("UPLOADPOST_API_KEY=") == 1
+        body = json.dumps({"key": "PATH", "value": "/evil"}).encode()
+        req = urllib.request.Request(base + "/api/settings", data=body,
+                                     headers={"Content-Type": "application/json"})
+        try:
+            urllib.request.urlopen(req)
+            raise AssertionError("settings allowlist not enforced over HTTP")
+        except urllib.error.HTTPError as e:
+            assert e.code == 400
+        api.set_setting("UPLOADPOST_API_KEY", "")      # empty value clears the key
+        assert api.settings()["backends"]["uploadpost"] == {"set": False, "last4": ""}
+        assert "UPLOADPOST_API_KEY" not in (root / ".env").read_text()
     finally:
         srv.shutdown()
 
