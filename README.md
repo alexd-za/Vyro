@@ -1,40 +1,76 @@
-# Clip Factory — starter kit
+<div align="center">
 
-A foundation for running **Claude Code + Codex as one shared system** on your Fedora box, pointed at a
-**Vyro clipping pipeline** (turn approved campaign footage into TikTok/Reels/Shorts clips that earn views).
+```
+ ██████╗██╗     ██╗██████╗     ███████╗ █████╗  ██████╗████████╗ ██████╗ ██████╗ ██╗   ██╗
+██╔════╝██║     ██║██╔══██╗    ██╔════╝██╔══██╗██╔════╝╚══██╔══╝██╔═══██╗██╔══██╗╚██╗ ██╔╝
+██║     ██║     ██║██████╔╝    █████╗  ███████║██║        ██║   ██║   ██║██████╔╝ ╚████╔╝
+██║     ██║     ██║██╔═══╝     ██╔══╝  ██╔══██║██║        ██║   ██║   ██║██╔══██╗  ╚██╔╝
+╚██████╗███████╗██║██║         ██║     ██║  ██║╚██████╗   ██║   ╚██████╔╝██║  ██║   ██║
+ ╚═════╝╚══════╝╚═╝╚═╝         ╚═╝     ╚═╝  ╚═╝ ╚═════╝   ╚═╝    ╚═════╝ ╚═╝  ╚═╝   ╚═╝
+```
 
-## What's in here
-- `AGENTS.md` — the canonical instructions. **Both** Codex (reads it automatically) and Claude Code use this.
-- `CLAUDE.md` — a one-line wrapper that imports `AGENTS.md` plus a few Claude-only notes.
-- `INSTALL-PROMPT.md` — paste this into Claude Code or Codex and it installs the **vetted** toolchain itself.
-- `setup-agents.sh` — safe, local-only scaffold (folders + knowledge base + the import wiring). Downloads nothing.
+**Approved campaign footage in → scroll-stopping vertical clips out.**
 
-## Start here
+A local, AI-operated clipping factory for the Vyro platform — TikTok / Reels / Shorts.
+
+![smoke](../../actions/workflows/smoke.yml/badge.svg)
+
+</div>
+
+## What it does
+
+Drop campaign videos in — get finished 9:16 clips out: auto-sorted into named
+campaigns, reframed with punch-in, **word-synced animated captions** with brand-color
+highlights, color grade, retention progress bar, loudness normalization, plus drafted
+titles, captions, pinned comments, and hashtags (4 max) checked against the campaign's
+banned phrases. A compliance gate blocks anything that breaks the brief, and nothing
+ever posts without a human confirming in the terminal.
+
+## Two ways to drive it
+
+**The web dashboard** — `./clip ui` (drag & drop, auto-sort, one-click produce, settings):
+
+![dashboard](docs/img/dashboard-dark.png)
+
+**The terminal** — `./clip` (big-art menu, spinners, live render progress), or hand the
+folder to **any AI agent** (Claude Code / Codex / Gemini): `AGENTS.md` + the shared
+git-native memory (`./clip mem`) mean every agent picks up exactly where the last stopped.
+
+## Quick start
+
 ```bash
 ./install.sh     # one command: system deps + venv + extras + health check
-./clip ui        # web dashboard: drag & drop videos, auto-sort, produce, captions
-./clip           # or the terminal menu — ./clip doctor, select, cut, produce, publish
+./clip demo      # safe end-to-end tour on synthetic footage
+./clip ui        # → http://127.0.0.1:8787
 ```
-Then (optional) open this folder in Claude Code or Codex and paste `INSTALL-PROMPT.md`
-to pull in the extra skills/tools. **Full walkthrough: `GETTING-STARTED.md`.**
 
-## How the dual-agent setup works
-- One source of truth (`AGENTS.md`), so the two CLIs never drift.
-- Portable `SKILL.md` skills live in `./skills` and work in both tools (in Codex you call them with `/skill-name`).
-- A git-native **shared memory** (`./clip mem`) every AI reads and writes: auto-recall at
-  session start (Claude Code hook), `add`/`search` for learnings and decisions, auto-logged
-  pipeline events, plus `./clip handoff` to swap AIs mid-batch. `knowledge/ledger.md`
-  (shipped clips + views) and `learnings.md` complete the self-improving loop.
-- Run out of quota on one tool → switch to the other. Same brain, no re-explaining.
+## The pipeline
 
-## Why a few things were left out on purpose
-- **No pasted "Fable 5"/extracted system prompt.** It can't reprogram the model and only bloats context. A lean,
-  task-specific instruction file (this one) is what actually improves output.
-- **No blind bulk-install of every URL.** The install prompt vets each source and skips anything fake, abandoned,
-  or built for bot-detection evasion / prompt extraction — that's malware-shaped risk on a machine you actually use.
-- **No fully-autonomous posting.** It violates TikTok's terms and gets accounts banned, which zeroes your Vyro
-  earnings. The pipeline prepares + schedules; you confirm each batch. (Clip *volume and quality* is the real lever.)
+| Stage | Command | What happens |
+|-------|---------|--------------|
+| Ingest | `./clip ingest` | probe, transcribe, stage — idempotent |
+| Sort | `./clip sort auto` | auto-named campaigns from filenames + transcripts |
+| Select | `./clip select` | rank the strongest moments (audio energy, scenes, silence) |
+| Cut | `./clip cut` | frame-accurate trim |
+| Produce | `./clip produce` | 9:16 + captions + grade + hook + progress bar |
+| QA | `./clip sheet` | contact sheet — the hook must match the footage |
+| Content | `./clip content` | titles, captions, pinned comment, hashtags, cover prompt |
+| Publish | `./clip publish` | compliance gate → dry-run → human-confirmed post |
 
-## The Vyro rule that shapes everything
-You may only clip **source content the campaign owner provides or approves**. Random or AI-generated source gets
-rejected. So this whole system is built to make many strong clips from *approved* footage — fast.
+Settings, publish-backend keys, and the operator profile live in the dashboard's
+**Settings** tab (secrets never leave the machine — the browser only ever sees the
+last 4 characters):
+
+![settings](docs/img/settings-dark.png)
+
+## For AI operators
+
+Start at **`AGENT-PLAYBOOK.md`**. Memory: `./clip mem recall` (auto via Claude Code
+hook). Switching AIs: `./clip handoff`. The rules that protect the account are in
+**`AGENTS.md`** — approved source only, disclose AI, never post unattended.
+
+## Verified
+
+`bash tests/smoke.sh` runs the whole pipeline on synthetic footage — 23 checks,
+run by CI on every PR. Zero runtime dependencies beyond ffmpeg + Python stdlib
+(whisper & pillow optional).
