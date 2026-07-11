@@ -4,7 +4,7 @@ This file is how any AI (a new chat, a reopened app, or a different model) picks
 exactly where the last one stopped. **Whoever operates this project reads this first and
 keeps it current.** If it ever conflicts with what you think you remember, this file wins.
 
-_Last updated: (set when you edit) · by: (which AI/session)_
+_Last updated: 2026-07-10 · by: Claude Code (project build session)_
 
 ---
 
@@ -31,4 +31,6 @@ _Last updated: (set when you edit) · by: (which AI/session)_
 (none)
 
 ## Next actions
-- Drop videos in `inbox/`, run `./clip ingest`, then categorize them into campaigns.
+- Toolkit is fully built (pipeline, web UI, memory, CI — 7 PRs merged).
+- Drop campaign videos in `inbox/` (or onto `./clip ui`) to start the first real batch.
+- Owner: rename the GitHub repo to `clip-factory` in Settings.
