@@ -734,378 +734,397 @@ PAGE = r"""<!doctype html>
 <title>Clip Factory</title>
 <link rel="icon" href="data:,">
 <style>
-/* ============ design tokens — dark is the showcase, light via media query ============ */
+/* ============ editorial cinema — tokens ============
+   type scale 12/14/16/20/28/40/64 · spacing scale 4/8/12/16/24/40/64
+   one ember accent, hairline dividers, display numerals            */
+@font-face{
+  font-family:"ClipDisplay";
+  src:url("/vendor/font-display.woff2") format("woff2");
+  font-weight:100 900;font-display:swap;
+}
 :root{
-  --bg:#0c0a09; --bg2:#141110;
-  --panel:rgba(255,255,255,.045); --panel2:rgba(255,255,255,.07);
-  --border:rgba(255,255,255,.09); --border2:rgba(255,255,255,.18);
-  --text:#f4f0e9; --muted:#a49a8b;
-  --accent:#FF6A2C; --accent2:#ffb45e; --accent-ink:#ffa06a;
-  --accent-soft:rgba(255,106,44,.13);
-  --ok:#4cc47e; --err:#ff7a62;
-  --r:16px; --r-sm:10px;
-  --grad:linear-gradient(135deg,#FF6A2C 0%,#ff8a3c 55%,#ffb45e 100%);
-  --glow:0 8px 30px rgba(255,106,44,.28);
-  --shadow:0 10px 34px rgba(0,0,0,.35);
-  --term-bg:#0a0908; --term-ink:#cbc1ae;
-  --nav-bg:rgba(12,10,9,.82);
+  --fs-12:.75rem;--fs-14:.875rem;--fs-16:1rem;--fs-20:1.25rem;
+  --fs-28:1.75rem;--fs-40:2.5rem;--fs-64:4rem;
+  --sp-4:4px;--sp-8:8px;--sp-12:12px;--sp-16:16px;--sp-24:24px;--sp-40:40px;--sp-64:64px;
+  --display:"ClipDisplay",ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --body:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  --bg:#131110;--raised:#1B1815;
+  --ink:#EDE6DC;--mute:#A69C8E;
+  --hair:rgba(237,230,220,.13);--hair-strong:rgba(237,230,220,.30);
+  --ember:#FF6A2C;--ember-ink:#FF8A50;--ember-soft:rgba(255,106,44,.12);
+  --on-ember:#1F0E05;
+  --ok:#7BC98F;--ok-soft:rgba(123,201,143,.10);
+  --err:#F0876B;--err-soft:rgba(240,135,107,.12);
+  --r:8px;--r-sm:4px;
+  --ease:cubic-bezier(.22,.61,.36,1);
+  --fast:.16s;--med:.22s;
 }
 @media (prefers-color-scheme: light){
   :root{
-    --bg:#faf6f0; --bg2:#f2ebe1;
-    --panel:rgba(255,255,255,.66); --panel2:rgba(40,30,20,.055);
-    --border:rgba(40,30,20,.12); --border2:rgba(40,30,20,.24);
-    --text:#241d15; --muted:#75675a;
-    --accent-ink:#ad400f; --accent-soft:rgba(255,106,44,.10);
-    --ok:#187240; --err:#b93526;
-    --glow:0 8px 26px rgba(255,106,44,.25);
-    --shadow:0 10px 30px rgba(40,30,20,.10);
-    --nav-bg:rgba(250,246,240,.86);
+    --bg:#F6F2EB;--raised:#FDFBF3;
+    --ink:#211B15;--mute:#5F564C;
+    --hair:rgba(33,27,21,.16);--hair-strong:rgba(33,27,21,.34);
+    --ember-ink:#A63E08;--ember-soft:rgba(255,106,44,.10);
+    --ok:#1E7A43;--ok-soft:rgba(30,122,67,.10);
+    --err:#B23A24;--err-soft:rgba(178,58,36,.10);
   }
 }
 *{box-sizing:border-box;margin:0;padding:0}
 html{color-scheme:dark light}
 body{
-  background:
-    radial-gradient(1100px 520px at 50% -160px, rgba(255,106,44,.16), transparent 62%),
-    radial-gradient(900px 700px at 108% 12%, rgba(255,180,94,.06), transparent 58%),
-    var(--bg);
-  color:var(--text);
-  font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
-  -webkit-font-smoothing:antialiased;
-  padding-bottom:72px;
+  background:var(--bg);color:var(--ink);
+  font:var(--fs-14)/1.6 var(--body);
+  -webkit-font-smoothing:antialiased;font-kerning:normal;
 }
-.wrap{max-width:1200px;margin:0 auto;padding:0 22px}
-::selection{background:var(--accent-soft);color:var(--text)}
+[hidden]{display:none !important}
+::selection{background:var(--ember-soft);color:var(--ink)}
+a{color:inherit}
+code{font:var(--fs-12)/1.5 var(--mono);background:var(--raised);
+  border:1px solid var(--hair);border-radius:var(--r-sm);padding:1px 5px}
+h1,h2,h3{text-wrap:balance}
+.skip{position:absolute;left:-9999px;top:0;z-index:100;background:var(--ember);
+  color:var(--on-ember);padding:var(--sp-8) var(--sp-16);border-radius:0 0 var(--r) 0;
+  font-weight:700;text-decoration:none}
+.skip:focus{left:0}
+:where(a,button,input,select,textarea,summary):focus-visible{
+  outline:2px solid var(--ember);outline-offset:2px;border-radius:var(--r-sm)}
 
-/* ============ hero ============ */
-.hero{position:relative;height:38vh;min-height:300px;max-height:480px;overflow:hidden;
-  background:#0c0a09;border-bottom:1px solid var(--border)}
+/* ============ shell: sticky rail + asymmetric main column ============ */
+.shell{display:grid;grid-template-columns:232px minmax(0,1fr);min-height:100vh}
+.rail{position:sticky;top:0;height:100vh;display:flex;flex-direction:column;
+  padding:var(--sp-24);border-right:1px solid var(--hair)}
+.logotype{font-family:var(--display);font-weight:850;font-size:var(--fs-20);
+  line-height:1.05;letter-spacing:-.02em;text-transform:uppercase;
+  text-decoration:none;margin-bottom:var(--sp-40)}
+.logotype .stop{color:var(--ember)}
+.rail nav{display:flex;flex-direction:column}
+.navlink{display:flex;align-items:center;gap:var(--sp-8);padding:var(--sp-12) 2px;
+  font-size:var(--fs-14);font-weight:600;color:var(--mute);text-decoration:none;
+  border-bottom:1px solid var(--hair);
+  transition:color var(--fast) var(--ease)}
+.navlink::before{content:"";width:5px;height:5px;border-radius:50%;flex:none;
+  background:transparent;transition:background var(--fast) var(--ease)}
+.navlink::after{content:"\2192";margin-left:auto;opacity:0;transform:translateX(-4px);
+  transition:opacity var(--fast) var(--ease),transform var(--fast) var(--ease)}
+.navlink:hover{color:var(--ink)}
+.navlink:hover::after{opacity:.6;transform:none}
+.navlink[aria-current]{color:var(--ink)}
+.navlink[aria-current]::before{background:var(--ember)}
+.count{min-width:18px;height:18px;padding:0 5px;border-radius:999px;
+  background:var(--ember);color:var(--on-ember);font-size:var(--fs-12);font-weight:800;
+  display:inline-grid;place-items:center;line-height:1}
+.rail-foot{margin-top:auto;display:flex;flex-direction:column;gap:var(--sp-8);
+  padding-top:var(--sp-24)}
+.badge{align-self:flex-start;font-family:var(--mono);font-size:var(--fs-12);
+  letter-spacing:.08em;text-transform:uppercase;color:var(--mute);
+  border:1px solid var(--hair-strong);border-radius:999px;padding:3px 10px}
+.badge.online{color:var(--ok);border-color:currentColor;background:var(--ok-soft)}
+.badge.offline{color:var(--mute)}
+.railnote{font-size:var(--fs-12);line-height:1.7;color:var(--mute)}
+
+main{min-width:0}
+.content{max-width:1020px;padding:0 var(--sp-40) var(--sp-64)}
+
+/* ============ hero — the projection strip (stays dark in both themes) ============ */
+.hero{position:relative;height:224px;overflow:hidden;background:#131110;
+  border-bottom:1px solid var(--hair)}
 #fx{position:absolute;inset:0;width:100%;height:100%;display:block}
 .hero-veil{position:absolute;inset:0;pointer-events:none;
-  background:linear-gradient(180deg,rgba(12,10,9,.18) 0%,rgba(12,10,9,.30) 46%,var(--bg) 100%)}
+  background:linear-gradient(180deg,rgba(19,17,16,.10) 0%,rgba(19,17,16,.55) 100%)}
 .hero.fallback #fx{display:none}
-.hero.fallback::before{content:"";position:absolute;inset:-45%;filter:blur(38px);
+.hero.fallback::before{content:"";position:absolute;inset:-40%;filter:blur(44px);
   background:
-    radial-gradient(34% 44% at 28% 42%, rgba(255,106,44,.38), transparent 70%),
-    radial-gradient(30% 42% at 72% 56%, rgba(255,180,94,.22), transparent 70%),
-    radial-gradient(24% 34% at 52% 26%, rgba(255,70,30,.20), transparent 70%);
-  animation:heroDrift 18s ease-in-out infinite alternate}
-@keyframes heroDrift{to{transform:rotate(9deg) scale(1.18) translate(3%,5%)}}
-.hero-inner{position:relative;z-index:2;height:100%;max-width:1200px;margin:0 auto;
-  padding:0 22px;display:flex;flex-direction:column;justify-content:center;gap:10px}
-.crumb{font-size:11px;font-weight:700;letter-spacing:.22em;text-transform:uppercase;
-  color:rgba(255,180,120,.75)}
-.wordmark{
-  font-size:clamp(34px,6vw,60px);font-weight:800;letter-spacing:.14em;line-height:1.04;
-  background:linear-gradient(98deg,#fff 8%,#ffd9c2 38%,#FF6A2C 72%,#ffb45e 96%);
-  -webkit-background-clip:text;background-clip:text;color:transparent;
-  filter:drop-shadow(0 4px 30px rgba(255,106,44,.25));
-}
-.tagline{font-size:clamp(13.5px,1.6vw,16px);color:rgba(238,228,214,.82);max-width:560px}
-.hero-meta{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:6px}
-.badge{
-  font-size:10.5px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;
-  padding:5px 13px;border-radius:999px;border:1px solid rgba(255,255,255,.22);
-  color:rgba(255,255,255,.75);background:rgba(255,255,255,.06);
-  backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
-}
-.badge.online{color:#7fe0a8;border-color:rgba(127,224,168,.5)}
-.badge.offline{color:#ffb090;border-color:rgba(255,176,144,.5)}
-.hero .hint{font-size:12px;color:rgba(238,228,214,.5)}
+    radial-gradient(30% 40% at 24% 60%, rgba(255,106,44,.30), transparent 70%),
+    radial-gradient(24% 36% at 68% 34%, rgba(255,176,110,.16), transparent 70%);
+  animation:emberDrift 26s ease-in-out infinite alternate}
+@keyframes emberDrift{to{transform:translate(4%,6%) scale(1.12)}}
+.hero-inner{position:relative;z-index:2;height:100%;max-width:1020px;
+  padding:0 var(--sp-40);display:flex;flex-direction:column;justify-content:center;
+  gap:var(--sp-8)}
+.kicker{font:600 var(--fs-12)/1 var(--mono);letter-spacing:.14em;text-transform:uppercase;
+  color:rgba(237,230,220,.62)}
+.headline{font-family:var(--display);font-weight:850;letter-spacing:-.02em;
+  font-size:clamp(var(--fs-28),1.35rem + 1.6vw,var(--fs-40));line-height:1.06;
+  color:#EDE6DC}
+.headline .stop{color:var(--ember)}
 
-/* ============ top nav (section tabs) ============ */
-.topnav{position:sticky;top:0;z-index:40;border-bottom:1px solid var(--border);
-  background:var(--nav-bg);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px)}
-.tabs{display:flex;gap:2px;overflow-x:auto}
-.tab{display:inline-flex;align-items:center;gap:8px;padding:13px 16px 11px;
-  font-size:13px;font-weight:650;letter-spacing:.02em;color:var(--muted);
-  text-decoration:none;border-bottom:2px solid transparent;white-space:nowrap;
-  transition:color .2s, border-color .2s}
-.tab:hover{color:var(--text)}
-.tab[aria-current]{color:var(--accent-ink);border-bottom-color:var(--accent)}
-.tab:focus-visible,button:focus-visible,summary:focus-visible{
-  outline:2px solid var(--accent);outline-offset:2px}
-.tabbadge{min-width:19px;height:19px;padding:0 6px;border-radius:999px;
-  background:var(--grad);color:#180b04;font-size:11px;font-weight:800;
-  display:inline-grid;place-items:center;line-height:1}
-[hidden]{display:none !important}
-.view{padding-top:8px}
-.narrow{max-width:820px}
-.block{margin-bottom:28px}
+/* ============ shared ============ */
+.view{padding-top:var(--sp-24)}
+.narrow{max-width:760px}
+.block{margin-top:var(--sp-40)}
+.viewhead{padding-bottom:var(--sp-16);border-bottom:1px solid var(--hair);
+  margin-bottom:var(--sp-24)}
+.viewhead h2{font-family:var(--display);font-weight:850;font-size:var(--fs-28);
+  letter-spacing:-.02em;line-height:1.1}
+.viewhead p{color:var(--mute);margin-top:var(--sp-4);max-width:60ch}
+.rule-label{font-size:var(--fs-12);font-weight:700;letter-spacing:.12em;
+  text-transform:uppercase;color:var(--mute);
+  padding-top:var(--sp-16);border-top:1px solid var(--hair);margin-bottom:var(--sp-12)}
+.empty{color:var(--mute);padding:var(--sp-12) 0}
+.meta{color:var(--mute);font:var(--fs-12)/1.6 var(--mono);font-variant-numeric:tabular-nums}
+.fname{font:600 var(--fs-14)/1.5 var(--mono);word-break:break-all}
 
-/* ============ shared bits ============ */
-section{margin-bottom:28px}
-h2.label{
-  font-size:11px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;
-  color:var(--muted);margin-bottom:12px;display:flex;align-items:center;gap:8px;
-}
-h2.label::before{content:"";width:16px;height:2px;border-radius:2px;background:var(--grad)}
-.card{
-  background:var(--panel);border:1px solid var(--border);border-radius:var(--r);
-  padding:18px;backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
-  box-shadow:inset 0 1px 0 rgba(255,255,255,.05), var(--shadow);
-  transition:transform .25s ease, border-color .25s ease, box-shadow .25s ease;
-}
-.card:hover{border-color:var(--border2)}
-.empty{color:var(--muted);font-size:13.5px;padding:10px 2px}
-code{background:var(--panel2);border:1px solid var(--border);border-radius:6px;
-  padding:1px 6px;font-size:12.5px}
 button{
-  font:inherit;font-size:13.5px;font-weight:600;color:var(--text);
-  background:var(--panel2);border:1px solid var(--border);border-radius:10px;
-  padding:8px 15px;cursor:pointer;
-  transition:border-color .2s, color .2s, box-shadow .25s, transform .15s;
-}
-button:hover{border-color:var(--accent);color:var(--accent-ink);transform:translateY(-1px)}
-button.primary{background:var(--grad);border:1px solid transparent;color:#180b04}
-button.primary:hover{color:#180b04;box-shadow:var(--glow)}
-button:disabled{opacity:.5;cursor:default;transform:none;box-shadow:none}
+  font:600 var(--fs-14)/1 var(--body);color:var(--ink);background:transparent;
+  border:1px solid var(--hair-strong);border-radius:var(--r);padding:10px 16px;
+  cursor:pointer;min-height:36px;
+  transition:border-color var(--fast) var(--ease),color var(--fast) var(--ease),
+             background var(--med) var(--ease)}
+button:hover{border-color:var(--ember);color:var(--ember-ink)}
+button.primary{background:var(--ember);border-color:var(--ember);color:var(--on-ember)}
+button.primary:hover{background:#FF7C45;border-color:#FF7C45;color:var(--on-ember)}
+button:disabled{opacity:.45;cursor:default}
 input,select,textarea{
-  font:inherit;font-size:13.5px;color:var(--text);background:var(--bg2);
-  border:1px solid var(--border);border-radius:10px;padding:8px 11px;min-width:0;
-  transition:border-color .2s, box-shadow .2s;
+  font:var(--fs-14)/1.4 var(--body);color:var(--ink);background:var(--raised);
+  border:1px solid var(--hair);border-radius:var(--r);padding:9px 12px;min-width:0;
+  transition:border-color var(--fast) var(--ease)}
+input:hover,select:hover{border-color:var(--hair-strong)}
+input:focus,select:focus,textarea:focus{outline:none;border-color:var(--ember)}
+input:focus-visible,select:focus-visible,textarea:focus-visible{
+  outline:2px solid var(--ember);outline-offset:1px}
+input::placeholder{color:var(--mute)}
+@media(pointer:coarse){
+  button{min-height:44px}
+  input,select{min-height:44px}
+  .navlink{padding-top:var(--sp-12);padding-bottom:var(--sp-12)}
 }
-input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent);
-  box-shadow:0 0 0 3px var(--accent-soft)}
-input::placeholder{color:var(--muted);opacity:.7}
 
-/* ============ entrance motion ============ */
-.reveal{opacity:0;transform:translateY(16px);
-  transition:opacity .65s cubic-bezier(.2,.7,.3,1), transform .65s cubic-bezier(.2,.7,.3,1)}
-.reveal.in{opacity:1;transform:none}
-
-/* ============ stats strip ============ */
-.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin:26px 0 30px}
-@media(max-width:640px){.stats{grid-template-columns:1fr}}
-.stat{padding:18px 20px;position:relative;overflow:hidden}
-.stat::after{content:"";position:absolute;right:-30px;top:-30px;width:110px;height:110px;
-  border-radius:50%;background:radial-gradient(closest-side, var(--accent-soft), transparent);pointer-events:none}
-.stat .num{
-  font-size:34px;font-weight:800;letter-spacing:-.02em;line-height:1.1;
-  background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent;
-  font-variant-numeric:tabular-nums;
-}
-.stat .cap{font-size:11.5px;font-weight:700;letter-spacing:.13em;text-transform:uppercase;
-  color:var(--muted);margin-top:4px}
-
-/* ============ layout ============ */
-main{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:22px}
-@media(max-width:960px){main{grid-template-columns:1fr}}
+/* ============ studio: display numerals on a hairline baseline ============ */
+.stats{display:flex;gap:var(--sp-40);padding:var(--sp-24) 0;
+  border-bottom:1px solid var(--hair);flex-wrap:wrap}
+.stat{display:flex;flex-direction:column;gap:var(--sp-4)}
+.stat + .stat{border-left:1px solid var(--hair);padding-left:var(--sp-40)}
+@media (max-width:560px){.stats{gap:var(--sp-16)}
+  .stat + .stat{padding-left:var(--sp-16)}}
+.num{font-family:var(--display);font-weight:850;letter-spacing:-.03em;line-height:1;
+  font-size:clamp(var(--fs-40),1.9rem + 2.4vw,var(--fs-64));
+  font-variant-numeric:tabular-nums}
+.cap{font-size:var(--fs-12);font-weight:700;letter-spacing:.12em;
+  text-transform:uppercase;color:var(--mute)}
 
 /* ============ drop zone ============ */
-.drop{
-  border:1.5px dashed var(--border2);border-radius:20px;background:var(--panel);
-  backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
-  padding:46px 24px;text-align:center;margin-bottom:28px;position:relative;overflow:hidden;
-  transition:border-color .2s, background .2s, box-shadow .3s;
-}
-.drop::before{content:"";position:absolute;inset:0;pointer-events:none;opacity:0;
-  background:radial-gradient(60% 120% at 50% 0%, var(--accent-soft), transparent 70%);
-  transition:opacity .3s}
-.drop.over{border-color:var(--accent);animation:dropPulse 1.1s ease-in-out infinite}
-.drop.over::before{opacity:1}
-@keyframes dropPulse{
-  0%,100%{box-shadow:0 0 0 0 rgba(255,106,44,.0), 0 0 26px 2px rgba(255,106,44,.18)}
-  50%{box-shadow:0 0 0 4px rgba(255,106,44,.14), 0 0 42px 8px rgba(255,106,44,.30)}
-}
-.drop .glyph{
-  width:52px;height:52px;margin:0 auto 14px;border-radius:15px;
-  background:var(--grad);color:#180b04;display:grid;place-items:center;
-  font-size:22px;font-weight:800;box-shadow:var(--glow);
-}
-.drop .t1{font-weight:700;font-size:17px;letter-spacing:-.01em}
-.drop .t2{color:var(--muted);font-size:13px;margin:6px 0 16px}
+.drop{margin-top:var(--sp-40);border:1px dashed var(--hair-strong);
+  border-radius:var(--r);padding:var(--sp-40) var(--sp-24);text-align:center;
+  transition:border-color var(--fast) var(--ease),background var(--med) var(--ease)}
+.drop.over{border-color:var(--ember);background:var(--ember-soft)}
+.drop .t1{font-family:var(--display);font-weight:850;font-size:var(--fs-20);
+  letter-spacing:-.01em}
+.drop .t2{color:var(--mute);font-size:var(--fs-12);margin:var(--sp-8) 0 var(--sp-16)}
 
 /* ============ staged / unsorted ============ */
-.staged{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:12px}
+.staged{display:flex;align-items:center;gap:var(--sp-16);flex-wrap:wrap;
+  padding:var(--sp-12) 0;border-bottom:1px solid var(--hair)}
 .staged .who{flex:1;min-width:180px}
-.fname{font-weight:650;font-size:14px;word-break:break-all}
-.meta{color:var(--muted);font-size:12.5px}
-form.assign{display:flex;gap:8px}
+form.assign{display:flex;gap:var(--sp-8)}
 
 /* ============ campaign board ============ */
-.camp{margin-bottom:18px}
-.camp-head{display:flex;align-items:baseline;gap:10px;margin-bottom:12px;flex-wrap:wrap}
-.camp-head .name{font-size:18px;font-weight:750;letter-spacing:-.015em}
-.pill{
-  font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;
-  border:1px solid var(--border);color:var(--muted);border-radius:999px;padding:2.5px 9px;
-}
-.pill.final{color:var(--ok);border-color:currentColor;background:rgba(76,196,126,.08)}
-.pill.brief{color:var(--accent-ink);border-color:currentColor;background:var(--accent-soft)}
-ul.sources{list-style:none;margin-bottom:14px}
-ul.sources li{display:flex;gap:10px;align-items:baseline;padding:3px 0;flex-wrap:wrap}
-.clips{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:14px}
-.clip{background:var(--panel2);border:1px solid var(--border);border-radius:14px;
-  padding:10px;display:flex;flex-direction:column;gap:8px;
-  transition:transform .25s ease, border-color .25s ease, box-shadow .3s ease}
-.clip:hover{transform:translateY(-3px);border-color:var(--border2);
-  box-shadow:0 14px 34px rgba(0,0,0,.35), 0 0 0 1px var(--accent-soft)}
-.clip video{width:100%;aspect-ratio:9/16;max-height:340px;border-radius:10px;background:#000}
-.clip-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-.clip-head .fname{flex:1;font-size:12.5px}
-details{border-top:1px solid var(--border);padding-top:6px}
-details summary{cursor:pointer;font-size:12.5px;color:var(--muted);user-select:none;
-  transition:color .2s}
-details summary:hover{color:var(--accent-ink)}
-details img{width:100%;border-radius:8px;margin-top:8px}
-details pre{
-  margin-top:8px;font-size:11.5px;line-height:1.5;white-space:pre-wrap;
-  word-break:break-word;max-height:260px;overflow:auto;color:var(--text);
-  background:var(--bg2);border-radius:8px;padding:10px;
-}
-form.produce{display:flex;flex-direction:column;gap:7px;border-top:1px solid var(--border);padding-top:9px}
-form.produce .row{display:flex;gap:7px}
+.camp{padding:var(--sp-24) 0;border-bottom:1px solid var(--hair)}
+.camp-head{display:flex;align-items:baseline;gap:var(--sp-12);flex-wrap:wrap;
+  margin-bottom:var(--sp-12)}
+.camp-head .name{font-family:var(--display);font-weight:850;font-size:var(--fs-20);
+  letter-spacing:-.01em}
+.pill{font:700 var(--fs-12)/1 var(--mono);letter-spacing:.08em;text-transform:uppercase;
+  border:1px solid var(--hair-strong);color:var(--mute);border-radius:999px;
+  padding:3px 9px}
+.pill.final,.pill.on{color:var(--ok);border-color:currentColor;background:var(--ok-soft)}
+.pill.brief{color:var(--ember-ink);border-color:currentColor;background:var(--ember-soft)}
+ul.sources{list-style:none;margin-bottom:var(--sp-16)}
+ul.sources li{display:flex;gap:var(--sp-12);align-items:baseline;flex-wrap:wrap;
+  padding:var(--sp-4) 0}
+.clips{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));
+  gap:var(--sp-16)}
+.clip{background:var(--raised);border:1px solid var(--hair);border-radius:var(--r);
+  padding:var(--sp-12);display:flex;flex-direction:column;gap:var(--sp-8);
+  transition:border-color var(--fast) var(--ease)}
+.clip:hover{border-color:var(--hair-strong)}
+.clip video{width:100%;aspect-ratio:9/16;max-height:320px;border-radius:var(--r-sm);
+  background:#000}
+.clip-head{display:flex;align-items:center;gap:var(--sp-8);flex-wrap:wrap}
+.clip-head .fname{flex:1;font-size:var(--fs-12)}
+details{border-top:1px solid var(--hair);padding-top:var(--sp-8)}
+details summary{cursor:pointer;font-size:var(--fs-12);color:var(--mute);
+  user-select:none;transition:color var(--fast) var(--ease)}
+details summary:hover{color:var(--ember-ink)}
+details img{width:100%;border-radius:var(--r-sm);margin-top:var(--sp-8)}
+details pre{margin-top:var(--sp-8);font:var(--fs-12)/1.6 var(--mono);
+  white-space:pre-wrap;word-break:break-word;max-height:260px;overflow:auto;
+  background:var(--bg);border:1px solid var(--hair);border-radius:var(--r-sm);
+  padding:var(--sp-12)}
+form.produce{display:flex;flex-direction:column;gap:var(--sp-8);
+  border-top:1px solid var(--hair);padding-top:var(--sp-8)}
+form.produce .row{display:flex;gap:var(--sp-8)}
 form.produce select{flex:1}
 
 /* ============ new campaign ============ */
-#newcamp form{display:grid;grid-template-columns:1fr 1fr;gap:12px}
-@media(max-width:640px){#newcamp form{grid-template-columns:1fr}}
-#newcamp .full{grid-column:1/-1}
-#newcamp label{display:flex;flex-direction:column;gap:5px;font-size:12.5px;color:var(--muted)}
-#newcamp .check{flex-direction:row;align-items:center;gap:8px;color:var(--text)}
-#newcamp input[type=checkbox]{accent-color:var(--accent);width:16px;height:16px}
-#newcamp .actions{grid-column:1/-1;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
-.fieldnote{font-size:11.5px;color:var(--muted)}
+#campform{display:grid;grid-template-columns:1fr 1fr;gap:var(--sp-16)}
+#campform .full{grid-column:1/-1}
+#campform label{display:flex;flex-direction:column;gap:var(--sp-4);
+  font-size:var(--fs-12);font-weight:600;color:var(--mute)}
+#campform .check{flex-direction:row;align-items:center;gap:var(--sp-8);
+  color:var(--ink);font-size:var(--fs-14)}
+#campform input[type=checkbox]{accent-color:var(--ember);width:16px;height:16px}
+#campform .actions{grid-column:1/-1;display:flex;align-items:center;
+  gap:var(--sp-16);flex-wrap:wrap}
+.fieldnote{font-size:var(--fs-12);color:var(--mute)}
 .fieldnote.bad{color:var(--err);font-weight:600}
 
-/* ============ jobs rail ============ */
-.job{margin-bottom:12px;padding:14px}
-.job-head{display:flex;align-items:center;gap:8px}
-.dot{width:8px;height:8px;border-radius:50%;background:var(--muted);flex:none}
-.dot.running{background:var(--accent);box-shadow:0 0 10px 1px rgba(255,106,44,.6);
-  animation:pulse 1.1s ease-in-out infinite}
+/* ============ jobs ============ */
+.job{padding:var(--sp-16) 0;border-bottom:1px solid var(--hair)}
+.job-head{display:flex;align-items:center;gap:var(--sp-8)}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--mute);flex:none}
+.dot.running{background:var(--ember);animation:pulse 1.2s var(--ease) infinite}
 .dot.done{background:var(--ok)} .dot.error{background:var(--err)}
 @keyframes pulse{50%{opacity:.35}}
-.job .label2{flex:1;font-size:13px;font-weight:600;word-break:break-all}
-.job .bar{height:3px;border-radius:3px;overflow:hidden;background:var(--panel2);
-  margin-top:10px;position:relative}
+.job .label2{flex:1;font:600 var(--fs-14)/1.5 var(--mono);word-break:break-all}
+.job .bar{height:2px;overflow:hidden;background:var(--hair);
+  margin-top:var(--sp-12);position:relative}
 .job .bar i{position:absolute;inset:0;transform:translateX(-100%);
-  background:linear-gradient(90deg,transparent,var(--accent) 45%,var(--accent2) 55%,transparent);
-  animation:shimmer 1.5s linear infinite}
+  background:linear-gradient(90deg,transparent,var(--ember),transparent);
+  animation:shimmer 1.6s linear infinite}
 @keyframes shimmer{to{transform:translateX(100%)}}
-.job pre{
-  margin-top:8px;font-size:11px;line-height:1.5;white-space:pre-wrap;word-break:break-word;
-  max-height:150px;overflow:auto;background:var(--bg2);border-radius:8px;padding:8px;
-  color:var(--muted);
-}
+.job pre{margin-top:var(--sp-8);font:var(--fs-12)/1.6 var(--mono);white-space:pre-wrap;
+  word-break:break-word;max-height:150px;overflow:auto;background:var(--raised);
+  border:1px solid var(--hair);border-radius:var(--r-sm);padding:var(--sp-8);
+  color:var(--mute)}
 
-/* ============ memory terminal ============ */
-.term{background:var(--term-bg);border:1px solid var(--border);border-radius:var(--r);
-  padding:0;overflow:hidden;position:relative;box-shadow:var(--shadow)}
-.term::after{content:"";position:absolute;inset:0;pointer-events:none;opacity:.6;
-  background:repeating-linear-gradient(0deg, rgba(255,255,255,.028) 0 1px, transparent 1px 3px)}
-.term .tbar{display:flex;align-items:center;gap:6px;padding:10px 13px;
-  border-bottom:1px solid rgba(255,255,255,.07);background:rgba(255,255,255,.03)}
-.term .tbar b{width:9px;height:9px;border-radius:50%;display:inline-block}
-.term .tbar b:nth-child(1){background:#ff5f57}.term .tbar b:nth-child(2){background:#febc2e}
-.term .tbar b:nth-child(3){background:#28c840}
-.term .tbar span{margin-left:8px;font:11px/1 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
-  color:rgba(255,255,255,.42);letter-spacing:.05em}
-pre.mem{
-  font:11.5px/1.7 ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
-  white-space:pre-wrap;word-break:break-word;color:var(--term-ink);
-  max-height:420px;overflow:auto;padding:13px 15px;
-}
-pre.mem::after{content:"▌";color:var(--accent);animation:blink 1.15s steps(1) infinite}
+/* ============ memory — the log slate (stays dark in both themes) ============ */
+.term{background:#131110;border:1px solid var(--hair-strong);border-radius:var(--r);
+  overflow:hidden}
+.term .tbar{font:var(--fs-12)/1 var(--mono);letter-spacing:.06em;
+  color:rgba(237,230,220,.55);padding:var(--sp-12) var(--sp-16);
+  border-bottom:1px solid rgba(237,230,220,.13)}
+.term .prompt{color:var(--ember)}
+pre.mem{font:var(--fs-12)/1.8 var(--mono);white-space:pre-wrap;word-break:break-word;
+  color:#C9BFAF;max-height:420px;overflow:auto;padding:var(--sp-16)}
+pre.mem::after{content:"\258C";color:var(--ember);
+  animation:blink 1.15s steps(1) infinite}
 @keyframes blink{50%{opacity:0}}
 
 /* ============ settings ============ */
-.setcard{margin-bottom:18px}
-.setcard h3{font-size:15px;font-weight:750;letter-spacing:-.01em;margin-bottom:3px}
-.setdesc{font-size:12.5px;color:var(--muted);margin-bottom:10px}
-form.setform{display:flex;flex-direction:column;gap:6px}
-form.setform label{font-size:12px;font-weight:600;color:var(--muted)}
-.setrow{display:flex;gap:8px}
+.setblock{padding:var(--sp-24) 0;border-bottom:1px solid var(--hair)}
+.setblock h3{font-family:var(--display);font-weight:850;font-size:var(--fs-16);
+  letter-spacing:-.01em;margin-bottom:2px}
+.setdesc{font-size:var(--fs-12);color:var(--mute);margin-bottom:var(--sp-12);
+  max-width:60ch}
+form.setform{display:flex;flex-direction:column;gap:var(--sp-8)}
+form.setform label{font-size:var(--fs-12);font-weight:600;color:var(--mute)}
+.setrow{display:flex;gap:var(--sp-8)}
 .setrow input{flex:1}
-.seg{display:inline-flex;gap:3px;padding:3px;border:1px solid var(--border);
-  border-radius:12px;background:var(--bg2)}
-.seg button{border-color:transparent;background:transparent;padding:7px 20px;border-radius:9px}
-.seg button[aria-pressed="true"]{background:var(--grad);color:#180b04}
-.seg button[aria-pressed="true"]:hover{color:#180b04;transform:none}
-.conn{padding:14px 0 8px;border-top:1px solid var(--border);margin-top:12px}
-.conn-head{display:flex;align-items:center;gap:10px;margin-bottom:2px}
-.conn-name{font-weight:700;font-size:14px}
-.pill.on{color:var(--ok);border-color:currentColor;background:rgba(76,196,126,.08)}
-.setnote{font-size:12px;color:var(--muted);padding:2px 4px}
+.seg{display:inline-flex;gap:var(--sp-4);padding:var(--sp-4);
+  border:1px solid var(--hair);border-radius:var(--r);background:var(--raised)}
+.seg button{border-color:transparent;padding:8px 20px;min-height:0}
+.seg button[aria-pressed="true"]{background:var(--ink);color:var(--bg)}
+.seg button[aria-pressed="true"]:hover{background:var(--ink);color:var(--bg);
+  border-color:transparent}
+.conn{padding:var(--sp-16) 0;border-top:1px solid var(--hair);margin-top:var(--sp-12)}
+.conn-head{display:flex;align-items:center;gap:var(--sp-12);margin-bottom:2px}
+.conn-name{font-weight:700;font-size:var(--fs-14)}
+.setnote{font-size:var(--fs-12);color:var(--mute);padding-top:var(--sp-16)}
 
 /* ============ toast ============ */
-#toast{
-  position:fixed;left:50%;bottom:26px;transform:translate(-50%,20px);opacity:0;z-index:50;
-  background:rgba(20,17,16,.92);color:#f4f0e9;border:1px solid var(--border2);
-  backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
-  font-size:13.5px;font-weight:600;padding:11px 20px;border-radius:12px;
-  pointer-events:none;transition:.28s;max-width:80vw;box-shadow:var(--shadow);
-}
+#toast{position:fixed;left:50%;bottom:var(--sp-24);transform:translate(-50%,12px);
+  opacity:0;z-index:50;background:var(--raised);color:var(--ink);
+  border:1px solid var(--hair-strong);font-size:var(--fs-14);font-weight:600;
+  padding:var(--sp-12) var(--sp-24);border-radius:var(--r);pointer-events:none;
+  transition:opacity var(--med) var(--ease),transform var(--med) var(--ease);
+  max-width:80vw}
 #toast.show{opacity:1;transform:translate(-50%,0)}
-#toast.err{background:rgba(120,30,18,.94);border-color:rgba(255,122,98,.5);color:#fff}
+#toast.err{border-color:var(--err);color:var(--err);background:var(--err-soft)}
+
+/* ============ small screens: rail becomes a top bar ============ */
+@media(max-width:880px){
+  .shell{display:block}
+  .rail{position:sticky;top:0;z-index:30;height:auto;flex-direction:row;
+    align-items:center;gap:var(--sp-12);padding:var(--sp-8) var(--sp-16);
+    border-right:0;border-bottom:1px solid var(--hair);background:var(--bg)}
+  .logotype{font-size:var(--fs-14);margin-bottom:0;white-space:nowrap}
+  .logotype br{display:none}
+  .rail nav{flex-direction:row;flex:1;overflow-x:auto;
+    -webkit-overflow-scrolling:touch}
+  .navlink{border-bottom:2px solid transparent;padding:var(--sp-12) var(--sp-8);
+    white-space:nowrap}
+  .navlink::before,.navlink::after{display:none}
+  .navlink[aria-current]{border-bottom-color:var(--ember)}
+  .rail-foot{margin:0;padding:0}
+  .railnote,#operator{display:none}
+  .content{padding:0 var(--sp-16) var(--sp-64)}
+  .hero{height:168px}
+  .hero-inner{padding:0 var(--sp-16)}
+  .stats{gap:var(--sp-24)}
+  .stat + .stat{padding-left:var(--sp-24)}
+  #campform{grid-template-columns:1fr}
+  .staged form.assign{width:100%}
+  form.assign input{flex:1}
+}
 
 /* ============ reduced motion: calm everything ============ */
 @media (prefers-reduced-motion: reduce){
   *,*::before,*::after{animation:none !important;transition:none !important}
-  .reveal{opacity:1;transform:none}
-  .clip:hover,button:hover{transform:none}
 }
 </style>
 </head>
 <body>
+<a class="skip" href="#main">Skip to content</a>
+<div class="shell">
 
-<div class="hero" id="hero">
-  <canvas id="fx" aria-hidden="true"></canvas>
-  <div class="hero-veil"></div>
-  <div class="hero-inner">
-    <div class="crumb">Vyro · short-form pipeline</div>
-    <h1 class="wordmark">CLIP FACTORY</h1>
-    <p class="tagline">Approved campaign video in — scroll-stopping vertical clips out.</p>
-    <div class="hero-meta">
-      <span id="mode" class="badge">…</span>
-      <span id="operator" class="badge" hidden></span>
-      <span class="hint">local · 127.0.0.1 · publishing stays in the terminal</span>
+<header class="rail">
+  <a class="logotype" href="#studio">Clip<br>Factory<span class="stop">.</span></a>
+  <nav aria-label="Sections">
+    <a class="navlink" id="tab-studio" href="#studio">Studio</a>
+    <a class="navlink" id="tab-campaigns" href="#campaigns">Campaigns</a>
+    <a class="navlink" id="tab-jobs" href="#jobs">Jobs <span class="count" id="jobsbadge" hidden>0</span></a>
+    <a class="navlink" id="tab-memory" href="#memory">Memory</a>
+    <a class="navlink" id="tab-settings" href="#settings">Settings</a>
+  </nav>
+  <div class="rail-foot">
+    <span id="mode" class="badge">…</span>
+    <span id="operator" class="badge" hidden></span>
+    <p class="railnote">Local · 127.0.0.1<br>Publishing stays in the terminal.</p>
+  </div>
+</header>
+
+<main id="main">
+  <div class="hero" id="hero">
+    <canvas id="fx" aria-hidden="true"></canvas>
+    <div class="hero-veil"></div>
+    <div class="hero-inner">
+      <p class="kicker">Vyro · short-form pipeline · Clip Factory</p>
+      <h1 class="headline">Approved video in.<br>Vertical clips out<span class="stop">.</span></h1>
     </div>
   </div>
-</div>
 
-<nav class="topnav" aria-label="Sections">
-  <div class="wrap tabs">
-    <a class="tab" id="tab-studio" href="#studio">Studio</a>
-    <a class="tab" id="tab-campaigns" href="#campaigns">Campaigns</a>
-    <a class="tab" id="tab-jobs" href="#jobs">Jobs<span class="tabbadge" id="jobsbadge" hidden>0</span></a>
-    <a class="tab" id="tab-memory" href="#memory">Memory</a>
-    <a class="tab" id="tab-settings" href="#settings">Settings</a>
-  </div>
-</nav>
+  <div class="content">
 
-<div class="wrap">
   <section class="view" id="sec-studio">
     <div class="stats">
-      <div class="stat card reveal"><div class="num" id="stat-campaigns">0</div><div class="cap">Campaigns</div></div>
-      <div class="stat card reveal"><div class="num" id="stat-clips">0</div><div class="cap">Clips produced</div></div>
-      <div class="stat card reveal"><div class="num" id="stat-unsorted">0</div><div class="cap">Awaiting sort</div></div>
+      <div class="stat"><span class="num" id="stat-campaigns">0</span><span class="cap">Campaigns</span></div>
+      <div class="stat"><span class="num" id="stat-clips">0</span><span class="cap">Clips produced</span></div>
+      <div class="stat"><span class="num" id="stat-unsorted">0</span><span class="cap">Awaiting sort</span></div>
     </div>
 
-    <div id="drop" class="drop reveal">
-      <div class="glyph">▼</div>
-      <div class="t1">Drop a campaign video to start</div>
-      <div class="t2">.mp4 · .mov · .mkv · .webm · .avi · .m4v — saved to <code>inbox/</code>, then ingested automatically</div>
+    <div id="drop" class="drop">
+      <p class="t1">Drop a campaign video to start</p>
+      <p class="t2">.mp4 · .mov · .mkv · .webm · .avi · .m4v — saved to <code>inbox/</code>, then ingested automatically</p>
       <button id="pick" type="button">Choose files…</button>
       <input type="file" id="file" multiple accept=".mp4,.mov,.mkv,.webm,.avi,.m4v,video/*" hidden aria-label="Choose video files">
     </div>
 
     <div class="block" id="unsorted-sec" hidden>
-      <h2 class="label">Staged — needs a campaign</h2>
+      <h2 class="rule-label">Staged — needs a campaign</h2>
       <div id="unsorted"></div>
     </div>
   </section>
 
   <section class="view" id="sec-campaigns" hidden>
-    <div class="block">
-      <h2 class="label">Campaign board</h2>
-      <div id="board"><div class="empty">Loading…</div></div>
-    </div>
+    <header class="viewhead">
+      <h2>Campaigns</h2>
+      <p>Sources, cuts, and finished 9:16 clips for every accepted brief.</p>
+    </header>
+    <div id="board"><p class="empty">Loading…</p></div>
 
-    <div class="card reveal block" id="newcamp">
-      <h2 class="label">New campaign</h2>
+    <div class="block" id="newcamp">
+      <h2 class="rule-label">New campaign</h2>
       <form id="campform">
         <label>Name
           <input name="name" placeholder="e.g. beast-games" required>
@@ -1126,34 +1145,43 @@ form.setform label{font-size:12px;font-weight:600;color:var(--muted)}
   </section>
 
   <section class="view narrow" id="sec-jobs" hidden>
-    <h2 class="label">Jobs</h2>
-    <div id="joblist"><div class="empty">Nothing running — produce a clip or drop a video.</div></div>
+    <header class="viewhead">
+      <h2>Jobs</h2>
+      <p>Ingest, sort, and produce runs with live output.</p>
+    </header>
+    <div id="joblist"><p class="empty">Nothing running — produce a clip or drop a video.</p></div>
   </section>
 
   <section class="view narrow" id="sec-memory" hidden>
-    <h2 class="label">Memory</h2>
-    <div class="term reveal">
-      <div class="tbar"><b></b><b></b><b></b><span>clip mem recall</span></div>
+    <header class="viewhead">
+      <h2>Memory</h2>
+      <p>What every agent in this repo remembers — the tail of <code>clip mem recall</code>.</p>
+    </header>
+    <div class="term">
+      <div class="tbar"><span class="prompt">$</span> clip mem recall</div>
       <pre class="mem" id="memlog">…</pre>
     </div>
   </section>
 
   <section class="view narrow" id="sec-settings" hidden>
-    <h2 class="label">Settings</h2>
+    <header class="viewhead">
+      <h2>Settings</h2>
+      <p>Written to <code>.env</code> on this machine only. A saved secret never returns to the browser — only its last 4 characters.</p>
+    </header>
 
-    <div class="card setcard reveal">
+    <div class="setblock">
       <h3>Operator</h3>
-      <p class="setdesc">Who is running this factory — shown as a chip in the header and used to attribute updates.</p>
+      <p class="setdesc">Who is running this factory — shown in the rail and used to attribute updates.</p>
       <form class="setform" id="opform">
         <label for="opname">Operator name</label>
         <div class="setrow">
           <input id="opname" name="OPERATOR_NAME" maxlength="80" placeholder="e.g. Alex" autocomplete="off">
-          <button class="primary" type="submit">Save</button>
+          <button type="submit">Save</button>
         </div>
       </form>
     </div>
 
-    <div class="card setcard reveal">
+    <div class="setblock">
       <h3>Mode</h3>
       <p class="setdesc">Online enables the publish step <em>in the terminal</em> — this UI never posts to a live account either way.</p>
       <div class="seg" role="group" aria-label="Pipeline mode">
@@ -1162,9 +1190,9 @@ form.setform label{font-size:12px;font-weight:600;color:var(--muted)}
       </div>
     </div>
 
-    <div class="card setcard reveal">
+    <div class="setblock">
       <h3>Connections</h3>
-      <p class="setdesc">Keys used by the terminal-side publish and scheduling skills. Saved values are never sent back to the browser — only the last 4 characters.</p>
+      <p class="setdesc">Keys used by the terminal-side publish and scheduling skills.</p>
 
       <div class="conn">
         <div class="conn-head"><span class="conn-name">Upload-Post</span><span class="pill" id="pill-uploadpost">Not set</span></div>
@@ -1173,7 +1201,7 @@ form.setform label{font-size:12px;font-weight:600;color:var(--muted)}
           <label for="in-uploadpost">Upload-Post API key</label>
           <div class="setrow">
             <input id="in-uploadpost" name="UPLOADPOST_API_KEY" type="password" autocomplete="off" placeholder="API key">
-            <button class="primary" type="submit">Save</button>
+            <button type="submit">Save</button>
           </div>
         </form>
       </div>
@@ -1189,7 +1217,7 @@ form.setform label{font-size:12px;font-weight:600;color:var(--muted)}
           <label for="in-scheduler-key">Scheduler API key</label>
           <div class="setrow">
             <input id="in-scheduler-key" name="SCHEDULER_API_KEY" type="password" autocomplete="off" placeholder="API key">
-            <button class="primary" type="submit">Save</button>
+            <button type="submit">Save</button>
           </div>
         </form>
       </div>
@@ -1205,7 +1233,7 @@ form.setform label{font-size:12px;font-weight:600;color:var(--muted)}
           <label for="in-tiktok-token">TikTok access token</label>
           <div class="setrow">
             <input id="in-tiktok-token" name="TIKTOK_ACCESS_TOKEN" type="password" autocomplete="off" placeholder="Access token">
-            <button class="primary" type="submit">Save</button>
+            <button type="submit">Save</button>
           </div>
         </form>
       </div>
@@ -1217,16 +1245,20 @@ form.setform label{font-size:12px;font-weight:600;color:var(--muted)}
           <label for="in-composio">Composio API key</label>
           <div class="setrow">
             <input id="in-composio" name="COMPOSIO_API_KEY" type="password" autocomplete="off" placeholder="API key">
-            <button class="primary" type="submit">Save</button>
+            <button type="submit">Save</button>
           </div>
         </form>
       </div>
     </div>
 
-    <p class="setnote reveal">Danger-free zone: everything here writes to <code>.env</code> (gitignored) on this machine only. Nothing is uploaded anywhere, and clearing a field removes its key.</p>
+    <p class="setnote">Everything here writes to <code>.env</code> (gitignored) on this machine only. Clearing a field removes its key.</p>
   </section>
+
+  </div>
+</main>
+
 </div>
-<div id="toast"></div>
+<div id="toast" role="status" aria-live="polite"></div>
 
 <script src="/vendor/three.min.js"></script>
 <script>
@@ -1253,7 +1285,6 @@ function route(){
     if(t === cur) tab.setAttribute("aria-current", "page");
     else tab.removeAttribute("aria-current");
   }
-  revealIn(document.getElementById("sec-" + cur));
   if(cur === "settings") refreshSettings();
   if(cur === "memory") refreshMemory();
 }
@@ -1272,29 +1303,7 @@ async function api(path, opts){
   return j;
 }
 
-/* ---------- entrance motion (IntersectionObserver + CSS transitions) ---------- */
-let booted = false;   // after the first paint settles, new renders appear instantly
-const io = (!REDUCED && "IntersectionObserver" in window)
-  ? new IntersectionObserver(entries => {
-      for(const en of entries){
-        if(en.isIntersecting){ en.target.classList.add("in"); io.unobserve(en.target); }
-      }
-    }, { rootMargin: "0px 0px -6% 0px" })
-  : null;
-function revealIn(scope){
-  const els = (scope || document).querySelectorAll(".reveal:not(.in)");
-  let i = 0;
-  for(const el of els){
-    if(el.closest("[hidden]")) continue;   // revealed by route() when its tab opens
-    if(!io || booted){ el.classList.add("in"); continue; }
-    el.style.transitionDelay = Math.min(i++ * 70, 420) + "ms";
-    io.observe(el);
-  }
-}
-revealIn(document);
-setTimeout(() => { booted = true; }, 2500);
-
-/* ---------- animated stat counters ---------- */
+/* ---------- animated stat counters (state feedback, 700ms ease-out) ---------- */
 const statVals = {};
 function setStat(id, v){
   const el = document.getElementById(id);
@@ -1310,7 +1319,8 @@ function setStat(id, v){
   })(t0);
 }
 
-/* ---------- three.js hero (graceful fallback if the vendor file is missing) ---------- */
+/* ---------- three.js hero: sparse drifting embers, fog depth-fade ----------
+   graceful CSS fallback when THREE is missing or motion is reduced */
 (function heroFX(){
   const hero = document.getElementById("hero");
   const canvas = document.getElementById("fx");
@@ -1321,31 +1331,29 @@ function setStat(id, v){
                                          powerPreference: "low-power" });
   }catch(e){ hero.classList.add("fallback"); return; }
   const scene = new THREE.Scene();
-  scene.fog = new THREE.FogExp2(0x0c0a09, 0.052);
-  const cam = new THREE.PerspectiveCamera(55, 2, 0.1, 100);
-  cam.position.set(0, 4.4, 11);
+  scene.fog = new THREE.FogExp2(0x131110, 0.085);
+  const cam = new THREE.PerspectiveCamera(50, 2, 0.1, 60);
+  cam.position.set(0, 0, 10);
 
-  // a drifting wave-field of glowing orange->amber particles
-  const COLS = 128, ROWS = 46, SX = 0.36, SZ = 0.44, N = COLS * ROWS;
+  const N = 240, RANGE_Y = 9, HALF_Y = RANGE_Y / 2;
   const pos = new Float32Array(N * 3), col = new Float32Array(N * 3);
-  const phase = new Float32Array(N);
-  const cA = new THREE.Color(0xff6a2c), cB = new THREE.Color(0xffb45e);
+  const y0 = new Float32Array(N), speed = new Float32Array(N), phase = new Float32Array(N);
+  const cA = new THREE.Color(0xff6a2c), cB = new THREE.Color(0xffc07a);
   const c = new THREE.Color();
-  let i = 0;
-  for(let r = 0; r < ROWS; r++) for(let q = 0; q < COLS; q++){
-    pos[i*3]   = (q - COLS/2) * SX;
-    pos[i*3+1] = 0;
-    pos[i*3+2] = (r - ROWS/2) * SZ;
-    c.copy(cA).lerp(cB, Math.min(1, q/COLS * .85 + Math.random() * .25));
+  for(let i = 0; i < N; i++){
+    pos[i*3]   = (Math.random() * 2 - 1) * 16;
+    pos[i*3+2] = -Math.random() * 9;              // depth -> fog fade
+    y0[i]      = Math.random() * RANGE_Y;
+    speed[i]   = 0.14 + Math.random() * 0.34;      // slow upward drift
+    phase[i]   = Math.random() * Math.PI * 2;
+    c.copy(cA).lerp(cB, Math.random());
     col[i*3] = c.r; col[i*3+1] = c.g; col[i*3+2] = c.b;
-    phase[i] = Math.random() * Math.PI * 2;
-    i++;
   }
   const geo = new THREE.BufferGeometry();
   geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
   geo.setAttribute("color", new THREE.BufferAttribute(col, 3));
   const mat = new THREE.PointsMaterial({
-    size: 0.075, vertexColors: true, transparent: true, opacity: 0.85,
+    size: 0.09, vertexColors: true, transparent: true, opacity: 0.9,
     depthWrite: false, blending: THREE.AdditiveBlending, sizeAttenuation: true,
   });
   scene.add(new THREE.Points(geo, mat));
@@ -1363,17 +1371,14 @@ function setStat(id, v){
   let raf = 0;
   function frame(t){
     raf = requestAnimationFrame(frame);
-    const s = t * 0.00045;
+    const s = t * 0.001;
     for(let k = 0; k < N; k++){
-      const x = pos[k*3], z = pos[k*3+2];
-      posAttr.array[k*3+1] =
-        Math.sin(x * 0.55 + s * 2.2) * 0.55 +
-        Math.cos(z * 0.50 - s * 1.6) * 0.45 +
-        Math.sin(phase[k] + s * 3.0) * 0.08;
+      posAttr.array[k*3+1] = ((y0[k] + s * speed[k]) % RANGE_Y) - HALF_Y;
+      posAttr.array[k*3]   = pos[k*3] + Math.sin(s * 0.4 + phase[k]) * 0.7;
     }
     posAttr.needsUpdate = true;
-    cam.position.x = Math.sin(s * 0.5) * 0.7;
-    cam.lookAt(0, 0.35, 0);
+    cam.position.x = Math.sin(s * 0.05) * 0.5;
+    cam.lookAt(0, 0, 0);
     renderer.render(scene, cam);
   }
   const start = () => { if(!raf) raf = requestAnimationFrame(frame); };
@@ -1417,7 +1422,7 @@ function suggestSlug(name){
              .replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40);
 }
 function unsortedRow(u){
-  return `<div class="card staged reveal">
+  return `<div class="staged">
     <div class="who"><div class="fname">${esc(u.name)}</div>
       <div class="meta">${fmtDur(u.duration)}${u.duration!=null?" · ":""}${fmtSize(u.size)} · id ${esc(u.id)}</div></div>
     <form class="assign" data-id="${esc(u.id)}">
@@ -1439,7 +1444,7 @@ function clipCard(k){
         <select name="grade" aria-label="Color grade"><option>vibrant</option><option>moody</option><option>none</option></select>
         <select name="reframe" aria-label="Reframe mode"><option>crop</option><option>blur</option></select>
       </div>
-      <button class="primary">Produce 9:16</button>
+      <button>Produce 9:16</button>
     </form>`;
   return `<div class="clip">
     <video controls preload="metadata" src="${mediaURL(k.rel)}"></video>
@@ -1451,15 +1456,15 @@ function campaignCard(c){
   const srcs = c.sources.length
     ? c.sources.map(s => `<li><span class="fname">${esc(s.name)}</span>
         <span class="meta">${fmtSize(s.size)} · ${esc(s.mtime)}</span></li>`).join("")
-    : `<li class="empty">no source video yet — assign one from staged, or drop one above</li>`;
+    : `<li class="empty">no source video yet — assign one from staged, or drop one in Studio</li>`;
   const clips = c.clips.length ? c.clips.map(clipCard).join("")
-    : `<div class="empty">No clips yet — cut moments with <code>./clip cut</code>, they show up here.</div>`;
-  return `<div class="card camp reveal">
+    : `<p class="empty">No clips yet — cut moments with <code>./clip cut</code>, they show up here.</p>`;
+  return `<article class="camp">
     <div class="camp-head"><span class="name">${esc(c.name)}</span>
       ${c.has_brief ? '<span class="pill brief">brief</span>' : '<span class="pill">no brief</span>'}
       <span class="meta">${c.clips.length} clip${c.clips.length===1?"":"s"}</span></div>
     <ul class="sources">${srcs}</ul>
-    <div class="clips">${clips}</div></div>`;
+    <div class="clips">${clips}</div></article>`;
 }
 async function refreshState(){
   try{
@@ -1473,12 +1478,11 @@ async function refreshState(){
     $("#unsorted").innerHTML = s.unsorted.map(unsortedRow).join("");
     $("#board").innerHTML = s.campaigns.length
       ? s.campaigns.map(campaignCard).join("")
-      : `<div class="empty">No campaigns yet — drop a video to start, or create one below.</div>`;
-    revealIn($("#unsorted")); revealIn($("#board"));
+      : `<p class="empty">No campaigns yet — drop a video in Studio, or create one below.</p>`;
   }catch(e){ toast("state: " + e.message, true); }
 }
 
-/* delegated: assign + produce + lazy content sheets */
+/* delegated: assign + produce + settings save + lazy content sheets */
 document.addEventListener("submit", async e => {
   const f = e.target;
   if(f.matches("form.assign")){
@@ -1570,14 +1574,14 @@ async function refreshJobs(){
     badge.hidden = !running;
     badge.textContent = running;
     $("#joblist").innerHTML = jobs.length ? jobs.map(j => `
-      <div class="card job">
+      <div class="job">
         <div class="job-head"><span class="dot ${esc(j.status)}"></span>
           <span class="label2">${esc(j.label)}</span>
           <span class="meta">${j.elapsed}s</span></div>
         ${j.status === "running" ? '<div class="bar"><i></i></div>' : ""}
         ${j.tail ? `<pre>${esc(j.tail.split("\n").slice(-12).join("\n").trim())}</pre>` : ""}
       </div>`).join("")
-      : `<div class="empty">Nothing running — produce a clip or drop a video.</div>`;
+      : `<p class="empty">Nothing running — produce a clip or drop a video.</p>`;
     if(stateStale){ refreshState(); refreshMemory(); }
   }catch(e){ /* server briefly busy — next poll wins */ }
 }
@@ -1600,7 +1604,7 @@ async function saveSetting(key, value){
 function applySettings(s){
   const chip = $("#operator");
   chip.hidden = !s.operator;
-  if(s.operator) chip.textContent = "Operator: " + s.operator;
+  if(s.operator) chip.textContent = "op · " + s.operator;
   const op = $("#opname");
   if(!op.dataset.dirty && document.activeElement !== op) op.value = s.operator || "";
   $("#mode-offline").setAttribute("aria-pressed", String(s.mode === "offline"));
