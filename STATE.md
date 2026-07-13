@@ -31,6 +31,7 @@ _Last updated: 2026-07-10 · by: Claude Code (project build session)_
 (none)
 
 ## Next actions
-- Toolkit is fully built (pipeline, web UI, memory, CI — 7 PRs merged).
+- Toolkit complete (9 PRs merged): pipeline, editorial web UI + settings manager,
+  cross-AI memory, straight block wordmark, CI, asset license ledger.
 - Drop campaign videos in `inbox/` (or onto `./clip ui`) to start the first real batch.
 - Owner: rename the GitHub repo to `clip-factory` in Settings.
